@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KiKit 面付けプリセット メーカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: 左に設定フォーム(セクションごとのカード)、右に固定のプレビュー+JSON。基板=ソルダーマスクの緑、強調=銅色 */
+  --bg: #f4f5f2;
+  --panel: #ffffff;
+  --ink: #1d2420;
+  --muted: #5d6862;
+  --line: #d9ddd7;
+  --accent: #0d6a45;      /* solder mask */
+  --accent-ink: #ffffff;
+  --copper: #b8692e;
+  --board: #1f7a50;
+  --board-edge: #0f4d31;
+  --rail: #c9b98f;        /* FR-4 生地 */
+  --tab: #6fbf95;
+  --cut: #c2361b;
+  --code-bg: #f0f2ee;
+  --font-body: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --panel: #1a1f1c; --ink: #e6ebe7; --muted: #9aa69f; --line: #2d3531;
+    --accent: #3fb47c; --accent-ink: #0b1a12; --copper: #e09254; --board: #1f6e48; --board-edge: #4fb985;
+    --rail: #6b6046; --tab: #3f9c6c; --cut: #ff7a5c; --code-bg: #141916; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121614; --panel: #1a1f1c; --ink: #e6ebe7; --muted: #9aa69f; --line: #2d3531;
+  --accent: #3fb47c; --accent-ink: #0b1a12; --copper: #e09254; --board: #1f6e48; --board-edge: #4fb985;
+  --rail: #6b6046; --tab: #3f9c6c; --cut: #ff7a5c; --code-bg: #141916; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.6; }
+header { padding: 20px 24px 12px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { margin: 0; font-size: 20px; font-weight: 700; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.lang { margin-left: auto; display: flex; gap: 4px; }
+.lang button { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+:lang(zh) body, :lang(zh) { --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+code, .mono { font-family: var(--font-mono); font-size: 12.5px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 520px); gap: 20px; padding: 20px 24px 40px; align-items: start; }
+@media (max-width: 960px) { main { grid-template-columns: 1fr; padding: 16px; } }
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.side { position: sticky; top: 12px; }
+@media (max-width: 960px) { .side { position: static; } }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.card > summary, .card > .head { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+.card[open] > summary::before { transform: rotate(90deg); }
+.card h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.card .key { color: var(--muted); }
+.chip { font-size: 11.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.lead { margin: 0; color: var(--muted); max-width: 70ch; }
+
+.types { display: flex; flex-wrap: wrap; gap: 6px; }
+.types button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; text-align: left; }
+.types button small { display: block; color: var(--muted); font-size: 11.5px; }
+.types button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--panel); }
+.types button[aria-pressed="true"] small { color: var(--accent); }
+
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 16px; }
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.field label { font-weight: 500; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.field label code { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+.field .help { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.field.changed label::after { content: var(--chg, "変更"); font-size: 10.5px; color: var(--copper); border: 1px solid var(--copper); border-radius: 4px; padding: 0 4px; }
+.inp { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); overflow: hidden; }
+.inp:focus-within { border-color: var(--accent); }
+.inp input, .inp select { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-family: var(--font-mono); font-size: 13px; padding: 6px 8px; outline: none; font-variant-numeric: tabular-nums; }
+.inp select { font-family: var(--font-body); }
+.inp .unit { padding: 6px 8px; color: var(--muted); font-family: var(--font-mono); font-size: 12px; border-left: 1px solid var(--line); }
+.check { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.btn { font: inherit; font-weight: 500; border-radius: 8px; padding: 7px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.presets button { font: inherit; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.presets button:hover { border-color: var(--accent); }
+.presets b { display: block; font-size: 13.5px; }
+.presets span { color: var(--muted); font-size: 12px; }
+
+.preview { padding: 12px; }
+.preview svg { width: 100%; height: auto; display: block; background: var(--bg); border-radius: 8px; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); padding: 8px 4px 0; font-variant-numeric: tabular-nums; }
+.stats b { color: var(--ink); font-family: var(--font-mono); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); padding: 4px 4px 0; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
+
+.fitres { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.fitopt { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); display: flex; flex-direction: column; gap: 6px; }
+.fitopt.best { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.fitopt .big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fitopt .big small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.fitopt .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fitopt .tag { font-size: 11px; color: var(--accent); font-weight: 700; }
+.warn { font-size: 12.5px; color: var(--cut); }
+.warns { display: flex; flex-direction: column; gap: 8px; padding: 10px 4px 0; }
+.wcard { border: 1px solid var(--line); border-left: 4px solid var(--copper); border-radius: 8px; padding: 8px 10px; background: var(--bg); display: flex; flex-direction: column; gap: 4px; }
+.wcard.err { border-left-color: var(--cut); }
+.wcard.ok { border-left-color: var(--accent); }
+.wcard b { font-size: 13px; }
+.wcard .lv { font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 5px; margin-right: 6px; color: #fff; background: var(--copper); }
+.wcard.err .lv { background: var(--cut); }
+.wcard.ok .lv { background: var(--accent); }
+.wcard p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.wcard .btn { align-self: flex-start; padding: 4px 10px; font-size: 12.5px; }
+.textsim { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.textsim .rendered { font-family: var(--font-mono); font-size: 14px; background: var(--code-bg); border-radius: 6px; padding: 6px 8px; overflow-x: auto; white-space: pre; }
+.textsim .rendered.bad { color: var(--cut); }
+.vars { display: flex; flex-wrap: wrap; gap: 4px; }
+.vars button { font-family: var(--font-mono); font-size: 11.5px; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.vars button:hover { border-color: var(--accent); }
+pre.out { margin: 0; background: var(--code-bg); border-top: 1px solid var(--line); padding: 12px 14px; max-height: 46vh; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre; }
+pre.out .c { color: var(--muted); }
+pre.out .k { color: var(--accent); }
+pre.out .s { color: var(--copper); }
+.cli { margin: 0; padding: 10px 14px; background: var(--code-bg); border-top: 1px solid var(--line); font-family: var(--font-mono); font-size: 12px; overflow-x: auto; white-space: pre; }
+.toast { min-height: 1.4em; font-size: 12.5px; color: var(--accent); }
+.toast.err { color: var(--cut); }
+textarea { width: 100%; min-height: 110px; font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 8px; resize: vertical; }
+.small { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-i18n>KiKit 面付けプリセット メーカー</h1>
+  <p data-i18n>KiKit の <code>kikit panelize -p 〜.json</code> 用の設定ファイルを画面で作るツールです。KiKit 本体がなくても使えます。既存の JSON を読み込んで編集することもできます。</p>
+  <div class="lang" id="langSwitch" role="group" aria-label="Language">
+    <button type="button" data-lang="ja">日本語</button>
+    <button type="button" data-lang="en">English</button>
+    <button type="button" data-lang="zh">简体中文</button>
+  </div>
+</header>
+
+<main>
+  <div class="col" id="form">
+    <section class="card">
+      <div class="head"><h2 data-i18n>はじめに選ぶ</h2><span class="small" data-i18n>よくある組み合わせの例です。メーカーの面付けルールは各社の仕様で確認してください。</span></div>
+      <div class="body"><div class="presets" id="presets"></div></div>
+    </section>
+    <section class="card" id="fitCard">
+      <div class="head" style="cursor:default"><h2 data-i18n>上限サイズから枚数を決める</h2><span class="small" data-i18n>今の間隔・レール・枠の設定で、上限に収まる最大の枚数を計算します</span></div>
+      <div class="body">
+        <div class="fields">
+          <div class="field"><label for="pw" data-i18n>基板の外形 幅</label><div class="inp"><input id="pw" inputmode="decimal" value="50"><span class="unit">mm</span></div><div class="help" data-i18n>Edge.Cuts の外形の横幅。プレビューにも使います</div></div>
+          <div class="field"><label for="ph" data-i18n>基板の外形 高さ</label><div class="inp"><input id="ph" inputmode="decimal" value="30"><span class="unit">mm</span></div><div class="help" data-i18n>Edge.Cuts の外形の縦幅</div></div>
+          <div class="field"><label for="maxW" data-i18n>パネルの上限 幅</label><div class="inp"><input id="maxW" inputmode="decimal" value="100"><span class="unit">mm</span></div><div class="help" data-i18n>メーカーや実装機の上限など</div></div>
+          <div class="field"><label for="maxH" data-i18n>パネルの上限 高さ</label><div class="inp"><input id="maxH" inputmode="decimal" value="100"><span class="unit">mm</span></div><div class="help"></div></div>
+        </div>
+        <div class="fitres" id="fitRes"></div>
+        <label class="check small"><input type="checkbox" id="fitGuard" checked> <span data-i18n>反映するとき、上限を <code>maxtotalwidth</code> / <code>maxtotalheight</code> にも入れる（超えたら KiKit がエラーを出す安全装置）</span></label>
+      </div>
+    </section>
+    <!-- sections are rendered here -->
+  </div>
+
+  <div class="col side">
+    <section class="card">
+      <div class="head" style="cursor:default"><h2 data-i18n>プレビュー</h2><span class="small" data-i18n>形のイメージです。実際の形は KiKit で確認してください</span></div>
+      <div class="preview">
+        <svg id="svg" viewBox="0 0 400 300" role="img" aria-label="パネルのプレビュー" data-i18n-aria></svg>
+        <div class="stats" id="stats"></div>
+        <div class="warns" id="warns" aria-live="polite"></div>
+        <div class="legend">
+          <span><i style="background:var(--board)"></i><span data-i18n>基板</span></span>
+          <span><i style="background:var(--rail)"></i><span data-i18n>レール・枠</span></span>
+          <span><i style="background:var(--cut)"></i><span data-i18n>Vカット</span></span>
+          <span><i style="background:var(--tab)"></i><span data-i18n>タブ</span></span>
+          <span><i style="background:var(--copper)"></i><span data-i18n>ミシン目</span></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="head" style="cursor:default"><h2 data-i18n>出力</h2>
+        <label class="check small"><input type="checkbox" id="optDiff" checked> <span data-i18n>初期値から変えた項目だけ</span></label>
+        <label class="check small"><input type="checkbox" id="optComment" checked> <span data-i18n>日本語コメントを付ける</span></label>
+      </div>
+      <div class="body" style="padding-top:0">
+        <div class="row">
+          <button class="btn primary" id="copyJson" data-i18n>JSON をコピー</button>
+          <button class="btn" id="dlJson" data-i18n>ダウンロード</button>
+          <div class="inp" style="width:200px"><input id="fname" value="panel-preset.json" aria-label="ファイル名" data-i18n-aria></div>
+        </div>
+        <div class="toast" id="toast" role="status"></div>
+      </div>
+      <pre class="out" id="out"></pre>
+      <pre class="cli" id="cli"></pre>
+    </section>
+
+    <details class="card">
+      <summary><h2 data-i18n>既存の JSON を読み込む</h2></summary>
+      <div class="body">
+        <p class="lead" data-i18n>KiKit の GUI で保存した JSON や、人からもらったプリセットを貼り付けるか、ファイルを選んでください。コメント入りの JSON も読めます。書かれていない項目は KiKit の初期値になります。</p>
+        <textarea id="importText" placeholder='{ "layout": { "rows": 2, "cols": 2 } }' aria-label="読み込む JSON" data-i18n-aria></textarea>
+        <div class="row">
+          <button class="btn primary" id="importBtn" data-i18n>読み込む</button>
+          <label class="btn" for="importFile" data-i18n>ファイルを選ぶ</label>
+          <input type="file" id="importFile" accept=".json,application/json,text/plain" hidden>
+          <button class="btn" id="resetBtn" data-i18n>初期値に戻す</button>
+        </div>
+      </div>
+    </details>
+  </div>
+</main>
+
+<script>
+"use strict";
+// ---- i18n: 日本語の文字列をキーにして、英語・簡体字中国語の訳を引く ----
+// 用語は KiCad 9 公式翻訳（kicad-source-mirror 9.0 / translation/pofiles）と KiKit の英語の説明に合わせる
+let LANG = (() => {
+  try { const s = localStorage.getItem("kikit-preset-maker-lang"); if (s === "ja" || s === "en" || s === "zh") return s; } catch (e) {}
+  const n = (navigator.language || "").toLowerCase();
+  return n.startsWith("ja") ? "ja" : n.startsWith("zh") ? "zh" : "en";
+})();
+// [英語, 簡体字中国語]
+let I18N = {"左上": ["Top left", "左上"], "上中央": ["Top center", "上中"], "右上": ["Top right", "右上"], "左中央": ["Middle left", "左中"], "中央": ["Center", "居中"], "右中央": ["Middle right", "右中"], "左下": ["Bottom left", "左下"], "下中央": ["Bottom center", "下中"], "右下": ["Bottom right", "右下"], "User.Comments（KiKit の初期値）": ["User.Comments (KiKit default)", "User.Comments（KiKit 默认）"], "Edge.Cuts（基板外形）": ["Edge.Cuts (board outline)", "Edge.Cuts（板框）"], "F.Silkscreen（表面シルクスクリーン）": ["F.Silkscreen (front silkscreen)", "F.Silkscreen（顶层丝印）"], "B.Silkscreen（裏面シルクスクリーン）": ["B.Silkscreen (back silkscreen)", "B.Silkscreen（底层丝印）"], "F.Silkscreen（表面シルクスクリーン・初期値）": ["F.Silkscreen (front silkscreen, default)", "F.Silkscreen（顶层丝印，默认）"], "F.Cu（表面の銅）": ["F.Cu (front copper)", "F.Cu（顶层铜层）"], "B.Cu（裏面の銅）": ["B.Cu (back copper)", "B.Cu（底层铜层）"], "F.Mask（表面ハンダマスク）": ["F.Mask (front solder mask)", "F.Mask（顶层阻焊）"], "B.Mask（裏面ハンダマスク）": ["B.Mask (back solder mask)", "B.Mask（底层阻焊）"], "並べ方": ["Layout", "排列"], "基板を何枚、どんな間隔で並べるか。": ["How many boards to place and how far apart.", "放置多少块电路板，以及间距多大。"], "グリッド": ["Grid", "栅格"], "縦横に並べる": ["Rows and columns", "按行列排列"], "縦の枚数": ["Rows", "行数"], "上下方向に並べる数": ["Specify the number of rows in the grid pattern", "上下方向排列的数量"], "横の枚数": ["Columns", "列数"], "左右方向に並べる数": ["Specify the number of columns in the grid pattern", "左右方向排列的数量"], "横の間隔": ["Horizontal space", "水平间距"], "左右に隣り合う基板のすき間。Vカットなら 0": ["Specify horizontal gap between the boards. 0 for V-cuts", "左右相邻电路板之间的间隙。V割时为 0"], "縦の間隔": ["Vertical space", "垂直间距"], "上下に隣り合う基板のすき間。Vカットなら 0": ["Specify vertical gap between the boards. 0 for V-cuts", "上下相邻电路板之间的间隙。V割时为 0"], "回転": ["Rotation", "旋转"], "並べる前に全部の基板を回す角度": ["Rotate the boards before placing them in the panel", "放置前将所有电路板旋转的角度"], "互い違い": ["Alternation", "交替旋转"], "行や列ごとに 180° 回して並べる": ["Specify alternations of board rotation (180° per row or column)", "每行或每列旋转 180° 排列"], "しない": ["None", "不使用"], "行ごと": ["Rows", "按行"], "列ごと": ["Columns", "按列"], "市松模様": ["Rows and columns (checkerboard)", "棋盘格"], "横の背骨の幅": ["Horizontal backbone", "水平加强筋宽度"], "基板の間を横に通す補強の帯。0 でなし": ["The width of horizontal backbone (0 means no backbone)", "在电路板之间横向贯穿的加强带。0 表示不使用"], "縦の背骨の幅": ["Vertical backbone", "垂直加强筋宽度"], "基板の間を縦に通す補強の帯。0 でなし": ["The width of vertical backbone (0 means no backbone)", "在电路板之间纵向贯穿的加强带。0 表示不使用"], "横の背骨も切る": ["Cut horizontal backbones", "水平加强筋也切割"], "背骨どうしが交わる所にもカットを入れる": ["Add cuts in backbones for easier depanelization", "在加强筋交叉处也加入切割"], "縦の背骨も切る": ["Cut vertical backbones", "垂直加强筋也切割"], "ネット名の付け方": ["Net renaming pattern", "网络名称规则"], "{n}=基板番号、{orig}=元の名前": ["{n} = board number, {orig} = original name", "{n}=电路板编号，{orig}=原名称"], "リファレンス指定子の付け方": ["Reference renaming pattern", "位号规则"], "{n}=基板番号、{orig}=元のリファレンス": ["{n} = board number, {orig} = original reference", "{n}=电路板编号，{orig}=原位号"], "テキスト変数を展開": ["Bake text", "展开文本变量"], "${TITLE} などを実際の文字に置き換える": ["Substitute variables (e.g. ${TITLE}) in text elements", "将 ${TITLE} 等变量替换为实际文本"], "元の基板の取り出し方": ["Source", "源电路板"], "元の .kicad_pcb のどこを 1 枚分として使うか。たいていは自動で大丈夫です。": ["Which part of the source .kicad_pcb is used as one board. Auto is fine in most cases.", "将源 .kicad_pcb 的哪个区域作为一块电路板。通常使用自动即可。"], "自動": ["Auto", "自动"], "Edge.Cuts から判定": ["Detect from Edge.Cuts", "根据板框判断"], "範囲を指定": ["Rectangle", "指定范围"], "座標で切り出す": ["Cut out by coordinates", "按坐标截取"], "アノテーションで指定": ["Annotation", "通过批注指定"], "kikit:Board を使う": ["Use kikit:Board", "使用 kikit:Board"], "はみ出し許容": ["Tolerance", "精度容差"], "外形からはみ出した部品やアノテーションも含める余白": ["Tolerance enlarges the source area by given amount (to include parts and annotations sticking out)", "将超出板框的元件和批注也包含在内的余量"], "左上 X": ["Top left X", "左上 X"], "切り出す範囲の左上": ["Corner of the rectangle (top left)", "截取范围的左上角"], "左上 Y": ["Top left Y", "左上 Y"], "右下 X": ["Bottom right X", "右下 X"], "切り出す範囲の右下": ["Corner of the rectangle (bottom right)", "截取范围的右下角"], "右下 Y": ["Bottom right Y", "右下 Y"], "アノテーションのリファレンス": ["Annotation reference", "批注位号"], "kikit:Board シンボルのリファレンス": ["Specify reference of KiKit annotation symbol (kikit:Board)", "kikit:Board 符号的位号"], "導体レイヤー数": ["Stack", "铜层数"], "パネルの導体レイヤー数": ["Number of copper layers of the panel", "拼板的铜层数"], "元の基板と同じ": ["Inherit from the source", "与源电路板相同"], "2 層": ["2 layers", "2 层"], "4 層": ["4 layers", "4 层"], "6 層": ["6 layers", "6 层"], "タブ（つなぎ）": ["Tabs", "连接桥（Tab）"], "基板どうしや枠をつなぐ部分。ここを割ったり切ったりして 1 枚ずつ外します。": ["The parts that connect boards to each other and to the frame. Boards are separated by breaking or cutting them.", "连接电路板之间或电路板与边框的部分。掰断或切断这里即可逐块取下。"], "間隔で配置": ["Spacing", "按间距放置"], "一定間隔ごとに置く": ["Place at a fixed spacing", "按固定间距放置"], "数で配置": ["Fixed", "按数量放置"], "1 辺あたりの数を決める": ["Fixed count per edge", "指定每条边的数量"], "全面つなぎ": ["Full", "整边连接"], "Vカット向け": ["For V-cuts", "适用于 V割"], "kikit:Tab の位置": ["Positions of kikit:Tab", "kikit:Tab 的位置"], "左右の辺のタブ幅": ["Tab width (left/right edges)", "左右边的连接桥宽度"], "基板の左右の辺に付くタブの太さ": ["Width of the tabs on the left and right edges of the board (hwidth)", "电路板左右边上连接桥的宽度"], "上下の辺のタブ幅": ["Tab width (top/bottom edges)", "上下边的连接桥宽度"], "基板の上下の辺に付くタブの太さ": ["Width of the tabs on the top and bottom edges of the board (vwidth)", "电路板上下边上连接桥的宽度"], "タブの最大間隔": ["Maximum tab spacing", "连接桥最大间距"], "この間隔を超えないようにタブを足す": ["The maximum spacing of the tabs", "按不超过此间距的方式添加连接桥"], "左右の辺のタブ数": ["Tab count (left/right edges)", "左右边的连接桥数量"], "左右の辺 1 本あたり。0 にすると左右はルーターで切り離し。辺が短いと自動で減ります": ["Per left/right edge. 0 separates boards left/right by milling. Reduced automatically on short edges", "每条左右边的数量。设为 0 时左右方向用铣刀分离。边较短时会自动减少"], "上下の辺のタブ数": ["Tab count (top/bottom edges)", "上下边的连接桥数量"], "上下の辺 1 本あたり。0 にすると上下はルーターで切り離し。辺が短いと自動で減ります": ["Per top/bottom edge. 0 separates boards top/bottom by milling. Reduced automatically on short edges", "每条上下边的数量。设为 0 时上下方向用铣刀分离。边较短时会自动减少"], "タブ同士の最小距離": ["Minimal tab distance", "连接桥最小距离"], "これより近いタブは減らす": ["Minimal spacing between the tabs. If there are too many tabs, their count is reduced.", "比此距离更近的连接桥会被减少"], "逃げ加工の深さ": ["Cutout depth", "避让切口深度"], "角をフライスで削れるように切り込む量": ["Depth of cutouts into the frame, so corners can be milled", "为了让铣刀能加工到角落而切入的深度"], "角を補強": ["Patch corners", "补强尖角"], "尖った角にも基材を足してつなぐ": ["Choose if to apply corner patches for the full tabs", "在尖角处也补充基材进行连接"], "タブのフットプリント": ["Tab footprints", "连接桥封装"], "カンマ区切りで複数可": ["Comma-separated, multiple allowed", "可用逗号分隔填写多个"], "タブのフィレット": ["Tab fillet", "连接桥圆角"], "タブの付け根を丸める半径": ["Specify tab fillet radius", "连接桥根部的圆角半径"], "切り離し方": ["Cuts", "分板方式"], "タブをどう切るか。Vカットは直線で一気に割る方式、ミシン目は小さな穴を並べて折る方式です。": ["How tabs are cut. V-cuts break the panel along straight lines; mouse bites are rows of small holes to snap along.", "如何切断连接桥。V割是沿直线一次掰开，邮票孔是排列小孔后折断。"], "なし": ["None", "无"], "切り込みを入れない": ["No cuts", "不加切割"], "ミシン目": ["Mouse bites", "邮票孔"], "穴を並べて折る": ["Snap along a row of holes", "排列小孔后折断"], "Vカット": ["V-cuts", "V割"], "V 溝で割る": ["Break along a V-groove", "沿 V 形槽掰开"], "線だけ描く": ["Layer", "仅绘制线"], "確認用": ["Lines only, for checking", "用于确认"], "穴の直径": ["Drill diameter", "孔径"], "ミシン目の 1 つの穴の大きさ": ["Diameter of each mouse bite hole", "每个邮票孔的大小"], "穴の間隔": ["Hole spacing", "孔间距"], "穴の中心どうしの距離": ["Distance between hole centers", "孔中心之间的距离"], "位置のずらし": ["Offset", "偏移"], "+ で基板側へ、− でタブ側へずらす": ["Offset cuts into the board (+ toward the board, − toward the tab)", "+ 向电路板侧，− 向连接桥侧偏移"], "延長": ["Prolong", "延长"], "フライスの丸みまで切り込みを伸ばす": ["Tangentially prolong cuts (to cut mill fillets)", "将切割延长到铣刀圆角处"], "銅とのクリアランス": ["Clearance", "铜皮间距"], "Vカットの周りに銅を置かない幅": ["Add copper clearance around V-cuts", "V割周围不放置铜的宽度"], "曲線も直線で切る": ["Cut curves", "曲线也按直线切割"], "曲がった辺を直線のカットで近似する": ["Approximate curves with straight cut", "用直线切割近似弯曲的边"], "描くレイヤー": ["Layer", "绘制层"], "Vカット線を描くレイヤー。メーカーの指定に合わせる": ["Layer for the V-cut drawings. Follow your manufacturer's requirements", "绘制 V割线的层。请按厂商要求设置"], "線の太さ": ["Line width", "线宽"], "線に添える文字": ["Text template", "线旁的文字"], "{pos_mm} などで位置を入れられる": ["Text template for the V-CUT; {pos_mm} etc. insert the position", "可用 {pos_mm} 等插入位置"], "文字の大きさ": ["Text size", "文本大小"], "文字と線の距離": ["Text offset from the V-CUT", "文字与线的距离"], "文字の無い側の延長": ["Prolongation on the end of V-CUT without text", "无文字一端的延长"], "文字側の延長": ["Prolongation on the text side of V-CUT", "文字一端的延长"], "レール・枠": ["Framing", "工艺边·边框"], "パネルの外側に付ける捨て板。実装機の搬送や手で持つための余白になります。": ["Waste material around the panel, used for conveying in pick-and-place machines and for handling.", "拼板外侧的废料，用于贴片机传送和手持。"], "上下レール": ["Rails top/bottom", "上下工艺边"], "上と下に帯": ["Strips on top and bottom", "上下两条"], "左右レール": ["Rails left/right", "左右工艺边"], "左と右に帯": ["Strips on left and right", "左右两条"], "枠": ["Frame", "边框"], "四方を囲む": ["Surrounds all sides", "四周包围"], "ぴったり枠": ["Tight frame", "紧贴边框"], "スロットで抜く": ["Milled slots around boards", "用槽铣出"], "レール・枠の幅": ["Framing width", "工艺边·边框宽度"], "捨て板の太さ": ["Width of the framing", "废料的宽度"], "左右のすき間": ["Horizontal space", "左右间隙"], "基板と枠の間（左右）": ["Horizontal space between PCBs and the frame", "电路板与边框之间（左右）"], "上下のすき間": ["Vertical space", "上下间隙"], "基板とレール・枠の間（上下）": ["Vertical space between PCBs and the frame/rails", "电路板与工艺边·边框之间（上下）"], "枠にも切り込み": ["Frame cuts", "边框也切割"], "枠を割って外せるようにする方向": ["Add cuts to the corners of the frame so it can be broken off", "让边框可以掰开取下的方向"], "縦横両方": ["Both", "横竖都切"], "縦だけ": ["Vertical only", "仅竖向"], "横だけ": ["Horizontal only", "仅横向"], "入れない": ["None", "不切"], "スロット幅": ["Slot width", "槽宽"], "基板の周りをくり抜く溝の幅": ["Width of the milled slot around the boards", "在电路板周围铣出的槽宽"], "角のフィレット": ["Corner fillet", "角部圆角"], "パネル外形の 4 隅を丸める半径": ["Add fillet to the 4 corners of the panel. Specify fillet radius.", "拼板外形 4 个角的圆角半径"], "角の面取り（横）": ["Chamfer width", "角部倒角（横）"], "角の面取り（縦）": ["Chamfer height", "角部倒角（竖）"], "パネルの最小幅": ["Minimal panel width", "拼板最小宽度"], "これより小さいと捨て板を足す": ["If smaller, waste material is added", "小于此值时补充废料"], "パネルの最小高さ": ["Minimal panel height", "拼板最小高度"], "パネルの最大幅": ["Maximal panel width", "拼板最大宽度"], "超えたら KiKit がエラーを出す。初期値 10m は実質無制限": ["KiKit fails if exceeded. Default 10m means practically unlimited", "超出时 KiKit 报错。默认 10m 实际上不限制"], "パネルの最大高さ": ["Maximal panel height", "拼板最大高度"], "ツーリング穴": ["Tooling holes", "定位孔"], "レールや枠に開ける位置決め用の穴。実装を頼むときに求められることがあります。": ["Positioning holes in the rails or frame. Often required for assembly.", "在工艺边或边框上开的定位孔。委托贴片时可能需要。"], "3 つ": ["3 holes", "3 个"], "角に 3 つ": ["3 in the corners", "角上 3 个"], "4 つ": ["4 holes", "4 个"], "四隅": ["All 4 corners", "四角"], "端からの距離（横）": ["Horizontal offset", "距边距离（横）"], "パネルの左右の端から穴の中心まで": ["Horizontal offset for the hole, from the left/right panel edge to the hole center", "从拼板左右边到孔中心的距离"], "端からの距離（縦）": ["Vertical offset", "距边距离（竖）"], "パネルの上下の端から穴の中心まで": ["Vertical offset for the hole, from the top/bottom panel edge to the hole center", "从拼板上下边到孔中心的距离"], "ハンダマスク開口の直径": ["Solder mask opening diameter", "阻焊开窗直径"], "穴の周りのハンダマスクを抜く大きさ（ハンダマスクの拡張）": ["Solder mask expansion/margin around the hole", "孔周围阻焊开窗的大小（阻焊扩展）"], "ハンダペーストにも入れる": ["Include on the paste layer", "也加入锡膏层"], "フィデューシャルマーク": ["Fiducials", "基准标记（Mark 点）"], "実装機がパネルの位置を読み取るための銅の丸印（KiCad のグローバル基準）。": ["Copper dots that pick-and-place machines use to locate the panel (KiCad global fiducials).", "贴片机用来识别拼板位置的圆形铜点（KiCad 的全局基准标记）。"], "銅の直径": ["Copper diameter", "铜点直径"], "丸印そのものの大きさ": ["Diameter of the copper part", "圆点本身的大小"], "丸印の周りを抜く大きさ": ["Diameter of the opening around the dot", "圆点周围开窗的大小"], "文字入れ": ["Text", "文字"], "レールや枠にシルクスクリーンで文字を入れます。{boardTitle} {boardRevision} {date} などの変数が使えます。": ["Adds silkscreen text to the rails or frame. Variables such as {boardTitle} {boardRevision} {date} can be used.", "在工艺边或边框上用丝印添加文字。可使用 {boardTitle} {boardRevision} {date} 等变量。"], "入れる": ["Simple", "添加"], "文字": ["Text", "文本"], "例: {boardTitle} Rev.{boardRevision} {date}": ["e.g. {boardTitle} Rev.{boardRevision} {date}", "例：{boardTitle} Rev.{boardRevision} {date}"], "アンカー": ["Anchor", "锚点"], "パネルのどこを基準に置くか": ["Anchor for positioning the text on the panel", "以拼板的哪个位置为基准"], "横のずらし": ["Horizontal offset", "水平偏移"], "縦のずらし": ["Vertical offset", "垂直偏移"], "上レールに載せるなら幅の半分くらい": ["About half the rail width to place it on the top rail", "放在上工艺边时约为宽度的一半"], "文字の幅": ["Character width", "字宽"], "文字の高さ": ["Character height", "字高"], "向き": ["Orientation", "方向"], "レイヤー": ["Layer", "层"], "裏面（B.〜）はプレビューで鏡文字になります": ["Back layers (B.*) are shown mirrored in the preview", "底层（B.*）在预览中显示为镜像"], "捨て板の銅の塗りつぶし": ["Copper fill", "工艺边铺铜"], "レールや枠を銅で塗りつぶして、反りやメッキのムラを減らします。": ["Fills the rails and frame with copper to reduce warping and uneven plating.", "在工艺边和边框上铺铜，减少翘曲和电镀不均。"], "塗りつぶし": ["Solid", "实心"], "ハッチング": ["Hatched", "阴影线"], "六角": ["Hex", "六边形"], "基板とのクリアランス": ["Clearance from boards", "与电路板的间距"], "パネル外周とのクリアランス": ["Clearance from the panel edge", "与拼板外缘的间距"], "カンマ区切り。all で全導体レイヤー": ["Comma-separated. all = all copper layers", "逗号分隔。all 表示全部铜层"], "ハッチング幅": ["Hatch width", "栅格宽度"], "間隔": ["Spacing", "间距"], "ハッチングの角度": ["Hatch orientation", "栅格角度"], "六角の大きさ": ["Hexagon diameter", "六边形大小"], "小片の切り捨て": ["Threshold", "碎片阈值"], "これより小さく欠けた六角は消す": ["Hexagons cut smaller than this are removed", "被切得小于此值的六边形会被删除"], "仕上げ": ["Post-processing", "后处理"], "パネルを作ったあとの処理。": ["Processing after the panel is built.", "生成拼板后的处理。"], "内角の R": ["Mill radius", "内角半径"], "フライスで削れない内角を丸める。1mm くらいが目安。0 で無効": ["Simulate milling: round inner corners a mill cannot cut. About 1mm is typical. 0 disables", "将铣刀无法加工的内角倒圆。一般约 1mm。0 表示不使用"], "外周だけの R": ["Outer mill radius", "仅外形内角半径"], "外形の内角だけを丸める": ["Simulate milling operation only on the outer perimeter of boards", "只对外形的内角倒圆"], "ドリル/配置ファイルの原点": ["Drill/place file origin", "钻孔/定位 文件原点"], "パネルのどこに原点を置くか": ["Where to place the origin on the panel", "在拼板的哪个位置放置原点"], "変えない": ["Unchanged", "不变"], "寸法線を描く": ["Dimensions", "绘制测量标注"], "パネル全体の寸法線を図面に入れる": ["Add dimension markings to the finished panel", "在图纸中加入整个拼板的测量标注"], "タブと枠を銅で塗りつぶす": ["Copper fill (deprecated)", "用铜填充连接桥和边框"], "旧方式。上の「捨て板の銅の塗りつぶし」の方が細かく設定できます": ["Deprecated; the Copper fill section above offers more settings", "旧方式。上方的「工艺边铺铜」可设置得更细"], "円弧を復元": ["Reconstruct arcs", "恢复弧线"], "多角形になった円弧を円弧に戻して保存": ["Try to reconstruct arcs that became polygons", "将变成多边形的弧线恢复为弧线后保存"], "ゾーンを塗りつぶす": ["Refill zones", "重填填充区"], "パネル化のあとゾーンを塗りつぶし直す": ["Refill all zones in the panel", "生成拼板后重新填充所有填充区"], "基板外形の線幅": ["Edge width", "板框线宽"], "Edge.Cuts の線幅": ["Line width of Edge.Cuts", "Edge.Cuts 的线宽"], "ページ設定": ["Page settings", "图纸设置"], "パネルを置く用紙。普通は元の基板と同じで大丈夫です。": ["The paper the panel is placed on. Usually the same as the source board.", "放置拼板的图纸。通常与源电路板相同即可。"], "元と同じ": ["Inherit", "与源相同"], "A4 縦": ["A4 portrait", "A4 纵向"], "サイズ指定": ["Custom", "自定义"], "パネルのアンカー": ["Panel anchor", "拼板锚点"], "置く位置 X": ["Position X", "位置 X"], "50% や 100mm": ["e.g. 50% or 100mm (length or percent of page width)", "如 50% 或 100mm"], "置く位置 Y": ["Position Y", "位置 Y"], "用紙の幅": ["Paper width", "图纸宽度"], "用紙の高さ": ["Paper height", "图纸高度"], "文字入れ %n%": ["Text %n%", "文字 %n%"], "%n% つ目の文字。文字入れ 1 と同じ設定ができます（KiKit では最大 4 つ）。": ["Text block %n%. Same settings as Text 1 (KiKit supports up to 4).", "第 %n% 个文字。可进行与文字 1 相同的设置（KiKit 最多 4 个）。"], "ミシン目 2×2 + 上下レール": ["Mouse bites 2×2 + top/bottom rails", "邮票孔 2×2 + 上下工艺边"], "手で割る試作向けの定番。ツーリング穴とマーク付き": ["Classic for hand-snapped prototypes. With tooling holes and fiducials", "手工掰板打样的常用组合。带定位孔和 Mark 点"], "Vカット 3×3 + 上下レール": ["V-cuts 3×3 + top/bottom rails", "V割 3×3 + 上下工艺边"], "四角い基板をすき間なく並べてVカットで割る": ["Rectangular boards placed with no gap and split with V-cuts", "将矩形电路板无间隙排列后用 V割分开"], "Vカット + タブ（ルーター併用）": ["V-cuts + tabs (with milling)", "V割 + 连接桥（配合铣槽）"], "タブ以外はルーターで抜いて、タブだけ Vカットで割る": ["Everything but the tabs is milled; only the tabs are V-cut", "连接桥以外用铣刀铣开，只有连接桥用 V割"], "ミシン目 + 四方の枠": ["Mouse bites + full frame", "邮票孔 + 四周边框"], "形が複雑な基板を枠で守る": ["Protects boards with complex outlines with a frame", "用边框保护外形复杂的电路板"], "初期値（1 枚）": ["Defaults (1 board)", "默认值（1 块）"], "KiKit の default.json そのまま": ["KiKit's default.json as is", "即 KiKit 的 default.json"], "%t%の種類": ["%t% type", "%t%类型"], "細かい設定": ["Advanced", "详细设置"], "%v%（読み込んだ値）": ["%v% (imported value)", "%v%（导入的值）"], " ・ ": [" · ", " · "], "%n% 項目変更": ["%n% changed", "%n% 项已修改"], "初期値": ["Default", "默认"], "種類": ["Type", "类型"], "閉じていない { か } があります": ["Unclosed { or }", "有未闭合的 { 或 }"], "入る文字のシミュレーション": ["Text preview", "文字效果预览"], "下の値はプレビュー用で、JSON には入りません。本番では、元の基板のタイトル ブロックの値（PCB エディターの「ファイル → ページ設定」で入れるもの）が使われます。": ["These values are only for the preview and are not saved to the JSON. The real panel uses the source board's title block (set in the PCB Editor under File → Page Settings).", "以下数值仅用于预览，不会写入 JSON。实际使用源电路板标题栏中的值（在 PCB 编辑器的「文件 → 图纸设置」中填写）。"], "タイトルなどのプレビュー用の値は「文字入れ 1」で変えられます。": ["Preview values such as the title are set in Text 1.", "标题等预览用的值请在「文字 1」中修改。"], "タイトル": ["Title", "标题"], "リビジョン": ["Revision", "修订"], "会社名": ["Company", "厂商"], "変数を挿入：": ["Insert variable:", "插入变量："], "実際に入る文字（目安）：": ["Rendered text (approx.):", "实际文字（参考）："], "（「なし」になっています）": ["(set to None)", "（已设为「无」）"], "（空）": ["(empty)", "（空）"], "長さ 約 %l% mm × 高さ %h% mm（%n% 文字）": ["Length approx. %l% mm × height %h% mm (%n% characters)", "长度约 %l% mm × 高度 %h% mm（%n% 个字符）"], "kikit panelize -p %f% 元の基板.kicad_pcb パネル.kicad_pcb": ["kikit panelize -p %f% source.kicad_pcb panel.kicad_pcb", "kikit panelize -p %f% 源电路板.kicad_pcb 拼板.kicad_pcb"], "<span>パネル <b>%w% × %h%</b> mm</span><span>基板 <b>%n%</b> 枚</span><span>カット <b>%c%</b></span>": ["<span>Panel <b>%w% × %h%</b> mm</span><span>Boards <b>%n%</b></span><span>Cuts <b>%c%</b></span>", "<span>拼板 <b>%w% × %h%</b> mm</span><span>电路板 <b>%n%</b> 块</span><span>分板 <b>%c%</b></span>"], "<span>タブ <b>%n%</b> 本</span>": ["<span>Tabs <b>%n%</b></span>", "<span>连接桥 <b>%n%</b> 个</span>"], "<span>タブ <b>全面</b></span>": ["<span>Tabs <b>full</b></span>", "<span>连接桥 <b>整边</b></span>"], "<span>タブは基板のアノテーション（kikit:Tab）の位置に入るので、プレビューには出ません</span>": ["<span>Tabs follow the kikit:Tab annotations on the board, so they are not shown in the preview</span>", "<span>连接桥位于电路板上的批注（kikit:Tab）处，因此不在预览中显示</span>"], "基板の外形と上限サイズを数字で入れてください": ["Enter the board outline and the size limit as numbers", "请用数字输入电路板外形和尺寸上限"], "回転なし": ["No rotation", "不旋转"], "90° 回転": ["Rotated 90°", "旋转 90°"], "枚（縦 %r% × 横 %c%）": ["boards (%r% rows × %c% columns)", "块（%r% 行 × %c% 列）"], "基板 %bw%×%bh% mm → パネル %w% × %h% mm": ["Board %bw%×%bh% mm → panel %w% × %h% mm", "电路板 %bw%×%bh% mm → 拼板 %w% × %h% mm"], "反映済み": ["Applied", "已应用"], "これにする": ["Use this", "使用此方案"], "枚": ["boards", "块"], "基板 %bw%×%bh% mm は上限に 1 枚も収まりません": ["A %bw%×%bh% mm board does not fit within the limit", "%bw%×%bh% mm 的电路板一块也放不下"], " ・ こっちが多い": [" · fits more", " · 这个更多"], "レール・枠が「なし」のときは、KiKit は maxtotal〜 をチェックしません。": ["When framing is None, KiKit does not check maxtotal*.", "工艺边·边框为「无」时，KiKit 不检查 maxtotal*。"], "上下レールのとき、KiKit がチェックするのは高さ（maxtotalheight）だけです。": ["With top/bottom rails, KiKit only checks the height (maxtotalheight).", "上下工艺边时，KiKit 只检查高度（maxtotalheight）。"], "左右レールのとき、KiKit がチェックするのは幅（maxtotalwidth）だけです。": ["With left/right rails, KiKit only checks the width (maxtotalwidth).", "左右工艺边时，KiKit 只检查宽度（maxtotalwidth）。"], "互い違いは 180° 回転なので、サイズの計算には影響しません。": ["Alternation rotates by 180°, so it does not affect the size.", "交替旋转是 180°，不影响尺寸计算。"], "縦 %r% × 横 %c%（%name%）を反映しました": ["Applied %r% rows × %c% columns (%name%)", "已应用 %r% 行 × %c% 列（%name%）"], "すき間なしの Vカットなら、タブは「全面つなぎ」が定番です": ["For V-cuts without gaps, full tabs are the usual choice", "无间隙 V割时，连接桥通常使用「整边连接」"], "基板どうしを辺全体でつないでおき、境目を Vカットで割る組み合わせです。": ["Connect boards along whole edges and split them with V-cuts at the boundaries.", "将电路板整边相连，在交界处用 V割分开。"], "タブを全面つなぎにする": ["Use full tabs", "改为整边连接"], "すき間をタブで全部埋めています": ["The gaps are completely filled with tabs", "间隙全部被连接桥填满"], "この形だと、すき間の部分も含めて辺全体が Vカットで割れます。タブを「数で配置」にすると、タブ以外はルーターで抜かれて、Vカットで割れる（ヤスリがけが必要な）部分がタブの所だけになります。": ["This way the whole edge, including the gaps, is split by V-cuts. With fixed tabs, everything except the tabs is milled, and only the tabs are V-cut (and need sanding).", "这样连同间隙在内整条边都用 V割分开。改为「按数量放置」后，连接桥以外都会被铣开，只有连接桥处用 V割（需要打磨）。"], "タブを数で配置にする（ルーター併用）": ["Use fixed tabs (with milling)", "改为按数量放置（配合铣槽）"], "すき間が %g%mm と狭いです": ["The gap is only %g%mm", "间隙只有 %g%mm，较窄"], "タブ以外のすき間はルーター（エンドミル）で抜くので、刃が通る幅が必要です。メーカーの「最小スロット幅」「ルーター径」を確認してください。2mm 前後にしておくと多くのメーカーで安心です。": ["Gaps outside the tabs are milled with a router (end mill), so they must be wide enough for the bit. Check your manufacturer's minimum slot width and router diameter. Around 2mm is safe for most manufacturers.", "连接桥以外的间隙用铣刀铣开，需要足够让刀具通过的宽度。请确认厂商的「最小槽宽」「铣刀直径」。设为 2mm 左右对多数厂商比较稳妥。"], "すき間を 2mm にする": ["Set gaps to 2mm", "将间隙设为 2mm"], "ミシン目なのに、基板の間にすき間がありません": ["Mouse bites, but there is no gap between boards", "使用邮票孔，但电路板之间没有间隙"], "ミシン目は、すき間に渡したタブに小さな穴を並べて折る方式です。すき間が 0 だとタブを作れないので、基板が切り離せません。": ["Mouse bites are rows of holes in tabs that bridge a gap. With a gap of 0 no tabs can be built, so the boards cannot be separated.", "邮票孔是在跨过间隙的连接桥上排列小孔后折断的方式。间隙为 0 时无法生成连接桥，电路板无法分开。"], "切り離し方が「なし」になっています": ["Cuts are set to None", "分板方式为「无」"], "タブに切り込みが入らないので、パネルから基板を外せません（KiKit の確認用なら問題ありません）。": ["The tabs get no cuts, so the boards cannot be removed from the panel (fine if you only want to check in KiKit).", "连接桥上没有切割，无法从拼板上取下电路板（仅在 KiKit 中确认时没有问题）。"], "Vカットにする": ["Use V-cuts", "改为 V割"], "ミシン目にする": ["Use mouse bites", "改为邮票孔"], "パネルがバラバラに分かれてしまいます": ["The panel falls apart", "拼板会散开"], "タブが 0 本の方向があって、どこにもつながっていない基板やレールがあります（%n% つに分かれます）。": ["Some direction has 0 tabs, so some boards or rails are not connected to anything (the panel splits into %n% pieces). ", "某个方向的连接桥为 0，有电路板或工艺边没有连接到任何地方（会分成 %n% 块）。"], "左右の辺のタブ数（hcount）が 0 なので、左右はルーターで切り離されます。その場合は、上下にレールを付けて、上下方向でつなぐ必要があります。": ["The left/right tab count (hcount) is 0, so boards are milled apart left/right. In that case add top/bottom rails and connect them vertically.", "左右边的连接桥数量（hcount）为 0，左右方向会被铣开。这种情况下需要加上下工艺边，在上下方向连接。"], "上下の辺のタブ数（vcount）が 0 なので、上下はルーターで切り離されます。その場合は、左右にレールを付けて、左右方向でつなぐ必要があります。": ["The top/bottom tab count (vcount) is 0, so boards are milled apart top/bottom. In that case add left/right rails and connect them horizontally.", "上下边的连接桥数量（vcount）为 0，上下方向会被铣开。这种情况下需要加左右工艺边，在左右方向连接。"], "上下レールを付けて、上下でつなぐ": ["Add top/bottom rails and connect vertically", "添加上下工艺边，在上下方向连接"], "左右レールを付けて、左右でつなぐ": ["Add left/right rails and connect horizontally", "添加左右工艺边，在左右方向连接"], "タブを各辺 2 本にする": ["Use 2 tabs per edge", "每条边设为 2 个连接桥"], "%name%を置くレールや枠がありません": ["No rails or frame to put the %name% on", "没有可放置%name%的工艺边或边框"], "ツーリング穴はパネルの外側の捨て板（レール・枠）に置くものです。枠が「なし」だと、基板そのものの上に穴が開いてしまいます。": ["Tooling holes belong on the waste material (rails or frame) around the panel. With framing set to None, the holes are drilled into the boards themselves.", "定位孔应放在拼板外侧的废料（工艺边·边框）上。边框为「无」时，孔会开在电路板本身上。"], "フィデューシャルマークはパネルの外側の捨て板（レール・枠）に置くものです。枠が「なし」だと、基板そのものの上にマークが載ってしまいます。": ["Fiducials belong on the waste material (rails or frame) around the panel. With framing set to None, the fiducials land on the boards themselves.", "基准标记应放在拼板外侧的废料（工艺边·边框）上。边框为「无」时，标记会落在电路板本身上。"], "上下レールを足して、その上に置く": ["Add top/bottom rails and place them there", "添加上下工艺边并放在上面"], "%name%がレール・枠の幅より大きいです": ["The %name% are larger than the framing width", "%name%比工艺边·边框的宽度还大"], "%name%の直径 %d%mm に対して、レール・枠の幅が %w%mm しかありません。基板にかかるかパネルからはみ出します。": ["The %name% are %d%mm in diameter, but the framing is only %w%mm wide. They will hit the boards or stick out of the panel.", "%name%的直径为 %d%mm，而工艺边·边框宽度只有 %w%mm。会碰到电路板或超出拼板。"], "レール・枠の幅を %w%mm にする": ["Set framing width to %w%mm", "将工艺边·边框宽度设为 %w%mm"], "%name%が基板にかかっているか、パネルからはみ出しています": ["The %name% hit the boards or stick out of the panel", "%name%碰到电路板或超出了拼板"], "「端からの距離」がレール・枠の幅（%w%mm）に合っていません。位置はパネルの角から測った距離です。レールの真ん中に置くなら、その方向の距離をレール幅の半分（%h%mm）にします。": ["The offsets do not match the framing width (%w%mm). They are measured from the panel corner. To center them on the rail, set the offset in that direction to half the rail width (%h%mm).", "「距边距离」与工艺边·边框宽度（%w%mm）不匹配。位置是从拼板角部测量的距离。要放在工艺边中间，请将该方向的距离设为宽度的一半（%h%mm）。"], "レールの真ん中に移動する": ["Move to the middle of the rail", "移到工艺边中间"], "フィデューシャルのハンダマスク開口が銅より小さいです": ["The fiducial solder mask opening is smaller than the copper", "基准标记的阻焊开窗比铜点还小"], "実装機はマークのまわりのハンダマスクが抜けた部分とのコントラストで位置を読みます。開口は銅の直径の 2 倍くらいが目安です。": ["Pick-and-place machines locate the mark by the contrast with the mask-free area around it. An opening about twice the copper diameter is typical.", "贴片机依靠标记周围阻焊开窗的对比度来识别位置。开窗一般约为铜点直径的 2 倍。"], "開口を銅の 2 倍にする": ["Set opening to twice the copper", "将开窗设为铜点的 2 倍"], "文字入れ %n%：": ["Text %n%: ", "文字 %n%："], "KiKit が知らない変数があります：%v%": ["Variable unknown to KiKit: %v%", "有 KiKit 不认识的变量：%v%"], "KiKit は知らない変数を見つけるとエラーで止まります。綴りを確認するか（大文字小文字も区別されます）、消してください。自分で決めた値なら、KiCad のプロジェクトのテキスト変数に入れて {user-名前} の形で使えます。": ["KiKit stops with an error on unknown variables. Check the spelling (case-sensitive) or remove it. For your own values, add them as text variables in the KiCad project and use them as {user-name}.", "KiKit 遇到不认识的变量会报错停止。请检查拼写（区分大小写）或删除。自定义的值可加入 KiCad 项目的文本变量，并以 {user-名称} 的形式使用。"], "その変数を消す": ["Remove the variable", "删除该变量"], "{ } の対応が取れていません": ["Unbalanced { }", "{ } 不成对"], "KiKit は { } を変数の印として使います。文字として { や } を入れたいときは {{ や }} と 2 つ重ねて書いてください。": ["KiKit uses { } to mark variables. To print a literal { or }, double it as {{ or }}.", "KiKit 用 { } 表示变量。要输出 { 或 } 本身，请写成 {{ 或 }}。"], "「入れる」なのに、文字が空です": ["Text is enabled but empty", "已设为「添加」，但文字为空"], "何も入りません。使わないなら種類を「なし」にしてください。": ["Nothing will be printed. Set the type to None if you do not need it.", "什么也不会输出。不需要的话请把类型设为「无」。"], "例の文字を入れる": ["Insert example text", "填入示例文字"], "「なし」にする": ["Set to None", "设为「无」"], "パネルの外にはみ出しています": ["Sticks out of the panel", "超出了拼板"], "基板の上に重なっています": ["Overlaps a board", "与电路板重叠"], "はみ出した部分は基板の外形の外なので、製造で消えます。": ["The part outside the board outline is removed in fabrication. ", "超出板框的部分在制造时会被去掉。"], "パネル用の文字が、製品になる基板のシルクスクリーンと重なってしまいます。": ["The panel text overlaps the silkscreen of the product boards. ", "拼板用的文字会与成品电路板的丝印重叠。"], "「アンカー」と「ずらし」で、文字をレールの上に置くのがおすすめです。上レールなら、アンカーを「上中央」にして、縦のずらしをレール幅の半分にします。": ["Use the anchor and offsets to put the text on a rail. For the top rail, set the anchor to Top center and the vertical offset to half the rail width.", "建议用「锚点」和「偏移」把文字放在工艺边上。放在上工艺边时，锚点设为「上中」，垂直偏移设为工艺边宽度的一半。"], "文字を載せる場所がないので、上下レールを足すのがおすすめです。": ["There is nowhere to put the text, so adding top/bottom rails is recommended.", "没有放置文字的地方，建议添加上下工艺边。"], "空いているレールの上に置く": ["Place on a free rail", "放到空闲的工艺边上"], "上下レールを足して、文字を載せる": ["Add top/bottom rails and put the text there", "添加上下工艺边并放上文字"], "文字入れ %n% と重なっています": ["Overlaps text %n%", "与文字 %n% 重叠"], "同じ場所に 2 つの文字が重なっています。アンカーを変える（上レールと下レール、左端と右端など）か、ずらしで離してください。": ["Two texts are in the same place. Change the anchor (top/bottom rail, left/right end, etc.) or move them apart with the offsets.", "两段文字重叠在同一位置。请更改锚点（上下工艺边、左右端等），或用偏移把它们分开。"], "空いているレールの上に移動する": ["Move to a free rail", "移到空闲的工艺边上"], "%name%と重なっています": ["Overlaps the %name%", "与%name%重叠"], "文字が%name%（とそのまわりのハンダマスク開口）にかかっています。穴やマークの近くはシルクスクリーンが印刷されないので、文字が欠けます。": ["The text covers the %name% (and the solder mask opening around them). Silkscreen is not printed near holes and marks, so the text will be clipped.", "文字覆盖了%name%（及其周围的阻焊开窗）。孔和标记附近不印丝印，文字会缺失。"], "文字の高さがレールの幅に対して大きすぎます": ["Text is too tall for the rail", "文字相对工艺边宽度太高"], "レール幅 %w%mm に対して文字の高さが %h%mm です。レールの端ぎりぎりはシルクスクリーンが欠けやすいので、レール幅の半分くらいまでにしておくと安心です。": ["The rail is %w%mm wide but the text is %h%mm tall. Silkscreen near the rail edge is easily clipped, so up to about half the rail width is safer.", "工艺边宽 %w%mm，文字高 %h%mm。靠近工艺边边缘的丝印容易缺失，控制在宽度的一半左右比较稳妥。"], "文字をレール幅の半分の大きさにする": ["Make the text half the rail width", "将文字设为工艺边宽度的一半"], "文字が長すぎて、パネルに入りきりません": ["Text is too long to fit on the panel", "文字太长，拼板放不下"], "文字の長さは約 %l%mm で、置ける幅は約 %a%mm です。文字を短くするか、文字幅を小さくしてください。": ["The text is about %l%mm long and about %a%mm is available. Shorten the text or reduce the character width.", "文字长约 %l%mm，可放置的宽度约 %a%mm。请缩短文字或减小字宽。"], "文字幅を小さくして収める": ["Shrink the character width to fit", "减小字宽使其放下"], "パネルが上限サイズ（maxtotal〜）を超えています": ["The panel exceeds the size limit (maxtotal*)", "拼板超出了尺寸上限（maxtotal*）"], "パネルは %w% × %h%mm、上限は %mw% × %mh%mm です。このままだと KiKit がエラーで止まります。枚数を減らすか、上限を見直してください。": ["The panel is %w% × %h%mm and the limit is %mw% × %mh%mm. KiKit will stop with an error. Reduce the number of boards or review the limit.", "拼板为 %w% × %h%mm，上限为 %mw% × %mh%mm。这样 KiKit 会报错停止。请减少数量或调整上限。"], "上限に収まる枚数にする": ["Use a count that fits the limit", "改为上限内能放下的数量"], "内角の R（millradius）が 0 です": ["Mill radius (millradius) is 0", "内角半径（millradius）为 0"], "基板の外形はルーター（ドリルのような刃）で削るので、内側の角は刃の半径ぶん丸くなります。0 のままだとデータと実物が少し変わります。1mm くらいにしておくのが一般的です。": ["Board outlines are cut with a router bit, so inner corners are rounded by the bit radius. With 0 the data differs slightly from the real board. About 1mm is common.", "电路板外形用铣刀加工，内角会按刀具半径变圆。保持 0 时数据与实物会略有差异。一般设为 1mm 左右。"], "内角の R を 1mm にする": ["Set mill radius to 1mm", "将内角半径设为 1mm"], "エラー": ["Error", "错误"], "注意": ["Warning", "注意"], "ヒント": ["Hint", "提示"], "気になるところはありません": ["Nothing to worry about", "没有需要注意的地方"], "「%x%」を反映しました": ["Applied: %x%", "已应用「%x%」"], "一番外側が { } のオブジェクトではありません": ["The top level is not a { } object", "最外层不是 { } 对象"], "読み込みました（%n% セクション）。書かれていない項目は初期値です。": ["Imported (%n% sections). Anything not written uses the defaults.", "已导入（%n% 个部分）。未写的项目使用默认值。"], "読み込めませんでした: ": ["Could not import: ", "无法导入："], "「%x%」を読み込みました": ["Loaded: %x%", "已载入「%x%」"], "KiKit 面付けプリセット メーカー": ["KiKit Panel Preset Maker", "KiKit 拼板预设生成器"], "JSON をコピーしました": ["Copied the JSON", "已复制 JSON"], "コピーできなかったので選択しました。⌘C でコピーしてください": ["Could not copy, so the text is selected. Press ⌘C / Ctrl+C to copy", "无法复制，已选中文本。请按 ⌘C / Ctrl+C 复制"], "保存しました": ["Saved", "已保存"], "保存しませんでした。「JSON をコピー」も使えます": ["Not saved. You can also use Copy JSON", "未保存。也可以使用「复制 JSON」"], "ダウンロードしました。保存されない場合は「JSON をコピー」を使ってください": ["Downloaded. If nothing was saved, use Copy JSON", "已下载。如果没有保存，请使用「复制 JSON」"], "この画面ではダウンロードできません。「JSON をコピー」を使ってください": ["Downloads are not available here. Use Copy JSON", "此处无法下载。请使用「复制 JSON」"], "初期値に戻しました": ["Reset to defaults", "已恢复默认值"], "KiKit の <code>kikit panelize -p 〜.json</code> 用の設定ファイルを画面で作るツールです。KiKit 本体がなくても使えます。既存の JSON を読み込んで編集することもできます。": ["A tool for building presets for KiKit's <code>kikit panelize -p ….json</code> on screen. Works without KiKit installed. You can also import and edit an existing JSON.", "在界面上生成 KiKit <code>kikit panelize -p ….json</code> 预设文件的工具。无需安装 KiKit 即可使用。也可以导入并编辑已有的 JSON。"], "はじめに選ぶ": ["Start from an example", "从示例开始"], "よくある組み合わせの例です。メーカーの面付けルールは各社の仕様で確認してください。": ["Common combinations. Check each manufacturer's panelization rules.", "常见组合示例。拼板规则请以各厂商的规范为准。"], "上限サイズから枚数を決める": ["Fit the board count to a size limit", "根据尺寸上限决定数量"], "今の間隔・レール・枠の設定で、上限に収まる最大の枚数を計算します": ["Calculates the maximum count that fits the limit with the current spacing, rails and frame", "按当前的间距、工艺边和边框设置，计算上限内可放下的最大数量"], "基板の外形 幅": ["Board outline width", "电路板外形 宽"], "Edge.Cuts の外形の横幅。プレビューにも使います": ["Width of the Edge.Cuts outline. Also used for the preview", "板框外形的宽度。也用于预览"], "基板の外形 高さ": ["Board outline height", "电路板外形 高"], "Edge.Cuts の外形の縦幅": ["Height of the Edge.Cuts outline", "板框外形的高度"], "パネルの上限 幅": ["Panel limit width", "拼板上限 宽"], "メーカーや実装機の上限など": ["e.g. your manufacturer's or assembly machine's limit", "厂商或贴片机的上限等"], "パネルの上限 高さ": ["Panel limit height", "拼板上限 高"], "反映するとき、上限を <code>maxtotalwidth</code> / <code>maxtotalheight</code> にも入れる（超えたら KiKit がエラーを出す安全装置）": ["When applying, also set the limit as <code>maxtotalwidth</code> / <code>maxtotalheight</code> (a safety net: KiKit fails if exceeded)", "应用时也把上限写入 <code>maxtotalwidth</code> / <code>maxtotalheight</code>（超出时 KiKit 报错的保护措施）"], "プレビュー": ["Preview", "预览"], "形のイメージです。実際の形は KiKit で確認してください": ["An approximation. Check the real shape in KiKit", "仅为示意。实际形状请在 KiKit 中确认"], "基板": ["Board", "电路板"], "タブ": ["Tab", "连接桥"], "出力": ["Output", "输出"], "初期値から変えた項目だけ": ["Only values changed from the defaults", "仅输出修改过的项目"], "日本語コメントを付ける": ["Add English comments", "添加中文注释"], "JSON をコピー": ["Copy JSON", "复制 JSON"], "ダウンロード": ["Download", "下载"], "既存の JSON を読み込む": ["Import an existing JSON", "导入已有的 JSON"], "KiKit の GUI で保存した JSON や、人からもらったプリセットを貼り付けるか、ファイルを選んでください。コメント入りの JSON も読めます。書かれていない項目は KiKit の初期値になります。": ["Paste a JSON saved from the KiKit GUI or a preset you received, or choose a file. JSON with comments is supported. Anything not written uses KiKit's defaults.", "粘贴从 KiKit GUI 保存的 JSON 或别人提供的预设，或选择文件。也可读取带注释的 JSON。未写的项目使用 KiKit 的默认值。"], "読み込む": ["Import", "导入"], "ファイルを選ぶ": ["Choose file", "选择文件"], "初期値に戻す": ["Reset to defaults", "恢复默认值"], "パネルのプレビュー": ["Panel preview", "拼板预览"], "ファイル名": ["File name", "文件名"], "読み込む JSON": ["JSON to import", "要导入的 JSON"], "変更": ["Changed", "已修改"]};
+// 文の途中に入る名詞（英語は小文字始まりにする）
+function TM(s, v) { const r = T(s, v); return LANG === "en" ? r.charAt(0).toLowerCase() + r.slice(1) : r; }
+function T(s, v) {
+  let r = s;
+  if (LANG !== "ja" && s != null && Object.prototype.hasOwnProperty.call(I18N, s)) r = I18N[s][LANG === "en" ? 0 : 1] ?? s;
+  if (v) r = String(r).replace(/%(\w+)%/g, (m, k) => (k in v ? v[k] : m));
+  return r;
+}
+// ---- KiKit default.json (kikit/resources/panelizePresets/default.json, master) ----
+const DEFAULTS = {
+  layout: { type: "grid", rows: 1, cols: 1, hspace: "0mm", vspace: "0mm", hevendiff: "0mm", vevendiff: "0mm", rotation: "0deg", alternation: "none", renamenet: "Board_{n}-{orig}", renameref: "{orig}", hbackbone: "0mm", vbackbone: "0mm", hboneskip: 0, vboneskip: 0, hbonefirst: 0, vbonefirst: 0, vbonecut: true, hbonecut: true, baketext: true, bakeref: false, code: "none", arg: "" },
+  source: { type: "auto", tolerance: "1mm", tlx: "0mm", tly: "0mm", brx: "0mm", bry: "0mm", ref: "", stack: "inherit" },
+  tabs: { type: "spacing", hcount: 1, vcount: 1, hwidth: "3mm", vwidth: "3mm", mindistance: "0mm", spacing: "10mm", tabfootprints: "kikit:Tab", fillet: "0mm", code: "none", arg: "", cutout: "1mm", patchcorners: true },
+  cuts: { type: "none", clearance: "0mm", cutcurves: false, linewidth: "0.3mm", textthickness: "0.3mm", textsize: "2mm", endprolongation: "3mm", textprolongation: "3mm", textoffset: "3mm", template: "V-CUT", layer: "Cmts.User", offset: "0mm", prolong: "0mm", drill: "0.5mm", spacing: "0.8mm", code: "none", arg: "" },
+  framing: { type: "none", thickness: "0mm", millRadius: "0mm", cuts: "both", copperFill: false, width: "5mm", slotwidth: "2mm", hspace: "2mm", vspace: "2mm", mintotalheight: "0mm", mintotalwidth: "0mm", maxtotalheight: "10m", maxtotalwidth: "10m", chamferwidth: "0mm", chamferheight: "0mm", fillet: "0mm", code: "none", arg: "" },
+  tooling: { type: "none", layout: "3hole", hoffset: "0mm", voffset: "0mm", size: "2mm", paste: false, soldermaskmargin: "0mm", code: "none", arg: "" },
+  fiducials: { type: "none", hoffset: "0mm", voffset: "0mm", coppersize: "1mm", opening: "1mm", paste: false, code: "none", arg: "" },
+  text: { type: "none", text: "", anchor: "mt", hoffset: "0mm", voffset: "0mm", orientation: "0deg", width: "1.5mm", height: "1.5mm", hjustify: "center", vjustify: "center", thickness: "0.3mm", layer: "F.SilkS", plugin: "none" },
+  text2: null, text3: null, text4: null,
+  copperfill: { type: "none", clearance: "0.5mm", edgeclearance: "0.5mm", layers: "F.Cu,B.Cu", width: "1mm", diameter: "7mm", spacing: "0.5mm", orientation: "45deg", threshold: "15%" },
+  post: { type: "auto", copperfill: false, reconstructarcs: false, millradius: "0mm", millradiusouter: "0mm", script: "", scriptarg: "", origin: "tl", refillzones: false, dimensions: false, edgewidth: "0.1mm" },
+  page: { type: "inherit", anchor: "mt", posx: "50%", posy: "20mm", width: "1000mm", height: "1000mm" }
+};
+
+DEFAULTS.text2 = Object.assign({}, DEFAULTS.text); DEFAULTS.text3 = Object.assign({}, DEFAULTS.text); DEFAULTS.text4 = Object.assign({}, DEFAULTS.text);
+const TEXT_KEYS = ["text", "text2", "text3", "text4"];
+const ANCHORS = [["tl","左上"],["mt","上中央"],["tr","右上"],["ml","左中央"],["c","中央"],["mr","右中央"],["bl","左下"],["mb","下中央"],["br","右下"]];
+
+// KiCad のレイヤー名（.kicad_pcb ファイル内の正式名）
+const CUT_LAYERS = [
+  ["Cmts.User", "User.Comments（KiKit の初期値）"],
+  ["Dwgs.User", "User.Drawings"],
+  ["Eco1.User", "User.Eco1"],
+  ["Eco2.User", "User.Eco2"],
+  ["Edge.Cuts", "Edge.Cuts（基板外形）"],
+  ["Margin", "Margin"],
+  ["F.SilkS", "F.Silkscreen（表面シルクスクリーン）"],
+  ["B.SilkS", "B.Silkscreen（裏面シルクスクリーン）"],
+  ["F.Fab", "F.Fab"],
+  ["B.Fab", "B.Fab"],
+  ["User.1", "User.1"], ["User.2", "User.2"], ["User.3", "User.3"],
+  ["User.4", "User.4"], ["User.5", "User.5"], ["User.6", "User.6"],
+  ["User.7", "User.7"], ["User.8", "User.8"], ["User.9", "User.9"]
+];
+
+const TEXT_LAYERS = [
+  ["F.SilkS", "F.Silkscreen（表面シルクスクリーン・初期値）"],
+  ["B.SilkS", "B.Silkscreen（裏面シルクスクリーン）"],
+  ["F.Cu", "F.Cu（表面の銅）"],
+  ["B.Cu", "B.Cu（裏面の銅）"],
+  ["F.Mask", "F.Mask（表面ハンダマスク）"],
+  ["B.Mask", "B.Mask（裏面ハンダマスク）"],
+  ["F.Fab", "F.Fab"],
+  ["B.Fab", "B.Fab"],
+  ["Cmts.User", "User.Comments"],
+  ["Dwgs.User", "User.Drawings"],
+  ["User.1", "User.1"], ["User.2", "User.2"], ["User.3", "User.3"]
+];
+
+// kind: mm / deg / pct / int / bool / text / select
+const SECTIONS = [
+  { key: "layout", title: "並べ方", lead: "基板を何枚、どんな間隔で並べるか。",
+    types: [["grid","グリッド","縦横に並べる"]],
+    fields: [
+      { k:"rows", kind:"int", label:"縦の枚数", help:"上下方向に並べる数" },
+      { k:"cols", kind:"int", label:"横の枚数", help:"左右方向に並べる数" },
+      { k:"hspace", kind:"mm", label:"横の間隔", help:"左右に隣り合う基板のすき間。Vカットなら 0" },
+      { k:"vspace", kind:"mm", label:"縦の間隔", help:"上下に隣り合う基板のすき間。Vカットなら 0" },
+      { k:"rotation", kind:"deg", label:"回転", help:"並べる前に全部の基板を回す角度" },
+      { k:"alternation", kind:"select", label:"互い違い", help:"行や列ごとに 180° 回して並べる", opts:[["none","しない"],["rows","行ごと"],["cols","列ごと"],["rowsCols","市松模様"]] },
+      { k:"hbackbone", kind:"mm", label:"横の背骨の幅", help:"基板の間を横に通す補強の帯。0 でなし", adv:true },
+      { k:"vbackbone", kind:"mm", label:"縦の背骨の幅", help:"基板の間を縦に通す補強の帯。0 でなし", adv:true },
+      { k:"hbonecut", kind:"bool", label:"横の背骨も切る", help:"背骨どうしが交わる所にもカットを入れる", adv:true },
+      { k:"vbonecut", kind:"bool", label:"縦の背骨も切る", help:"背骨どうしが交わる所にもカットを入れる", adv:true },
+      { k:"renamenet", kind:"text", label:"ネット名の付け方", help:"{n}=基板番号、{orig}=元の名前", adv:true },
+      { k:"renameref", kind:"text", label:"リファレンス指定子の付け方", help:"{n}=基板番号、{orig}=元のリファレンス", adv:true },
+      { k:"baketext", kind:"bool", label:"テキスト変数を展開", help:"${TITLE} などを実際の文字に置き換える", adv:true }
+    ]},
+  { key: "source", title: "元の基板の取り出し方", lead: "元の .kicad_pcb のどこを 1 枚分として使うか。たいていは自動で大丈夫です。",
+    types: [["auto","自動","Edge.Cuts から判定"],["rectangle","範囲を指定","座標で切り出す"],["annotation","アノテーションで指定","kikit:Board を使う"]],
+    fields: [
+      { k:"tolerance", kind:"mm", label:"はみ出し許容", help:"外形からはみ出した部品やアノテーションも含める余白", show:["auto","annotation"] },
+      { k:"tlx", kind:"mm", label:"左上 X", help:"切り出す範囲の左上", show:["rectangle"] },
+      { k:"tly", kind:"mm", label:"左上 Y", help:"", show:["rectangle"] },
+      { k:"brx", kind:"mm", label:"右下 X", help:"切り出す範囲の右下", show:["rectangle"] },
+      { k:"bry", kind:"mm", label:"右下 Y", help:"", show:["rectangle"] },
+      { k:"ref", kind:"text", label:"アノテーションのリファレンス", help:"kikit:Board シンボルのリファレンス", show:["annotation"] },
+      { k:"stack", kind:"select", label:"導体レイヤー数", help:"パネルの導体レイヤー数", opts:[["inherit","元の基板と同じ"],["2layer","2 層"],["4layer","4 層"],["6layer","6 層"]], adv:true }
+    ]},
+  { key: "tabs", title: "タブ（つなぎ）", lead: "基板どうしや枠をつなぐ部分。ここを割ったり切ったりして 1 枚ずつ外します。",
+    types: [["spacing","間隔で配置","一定間隔ごとに置く"],["fixed","数で配置","1 辺あたりの数を決める"],["full","全面つなぎ","Vカット向け"],["annotation","アノテーションで指定","kikit:Tab の位置"]],
+    fields: [
+      { k:"hwidth", kind:"mm", label:"左右の辺のタブ幅", help:"基板の左右の辺に付くタブの太さ", show:["spacing","fixed"] },
+      { k:"vwidth", kind:"mm", label:"上下の辺のタブ幅", help:"基板の上下の辺に付くタブの太さ", show:["spacing","fixed"] },
+      { k:"spacing", kind:"mm", label:"タブの最大間隔", help:"この間隔を超えないようにタブを足す", show:["spacing"] },
+      { k:"hcount", kind:"int", label:"左右の辺のタブ数", help:"左右の辺 1 本あたり。0 にすると左右はルーターで切り離し。辺が短いと自動で減ります", show:["fixed"] },
+      { k:"vcount", kind:"int", label:"上下の辺のタブ数", help:"上下の辺 1 本あたり。0 にすると上下はルーターで切り離し。辺が短いと自動で減ります", show:["fixed"] },
+      { k:"mindistance", kind:"mm", label:"タブ同士の最小距離", help:"これより近いタブは減らす", show:["fixed"] },
+      { k:"cutout", kind:"mm", label:"逃げ加工の深さ", help:"角をフライスで削れるように切り込む量", show:["full"] },
+      { k:"patchcorners", kind:"bool", label:"角を補強", help:"尖った角にも基材を足してつなぐ", show:["full"] },
+      { k:"tabfootprints", kind:"text", label:"タブのフットプリント", help:"カンマ区切りで複数可", show:["annotation"] },
+      { k:"fillet", kind:"mm", label:"タブのフィレット", help:"タブの付け根を丸める半径", adv:true }
+    ]},
+  { key: "cuts", title: "切り離し方", lead: "タブをどう切るか。Vカットは直線で一気に割る方式、ミシン目は小さな穴を並べて折る方式です。",
+    types: [["none","なし","切り込みを入れない"],["mousebites","ミシン目","穴を並べて折る"],["vcuts","Vカット","V 溝で割る"],["layer","線だけ描く","確認用"]],
+    fields: [
+      { k:"drill", kind:"mm", label:"穴の直径", help:"ミシン目の 1 つの穴の大きさ", show:["mousebites"] },
+      { k:"spacing", kind:"mm", label:"穴の間隔", help:"穴の中心どうしの距離", show:["mousebites"] },
+      { k:"offset", kind:"mm", label:"位置のずらし", help:"+ で基板側へ、− でタブ側へずらす", show:["mousebites","vcuts"] },
+      { k:"prolong", kind:"mm", label:"延長", help:"フライスの丸みまで切り込みを伸ばす", show:["mousebites","layer"] },
+      { k:"clearance", kind:"mm", label:"銅とのクリアランス", help:"Vカットの周りに銅を置かない幅", show:["vcuts"] },
+      { k:"cutcurves", kind:"bool", label:"曲線も直線で切る", help:"曲がった辺を直線のカットで近似する", show:["vcuts"] },
+      { k:"layer", kind:"select", label:"描くレイヤー", help:"Vカット線を描くレイヤー。メーカーの指定に合わせる", show:["vcuts","layer"], opts:CUT_LAYERS },
+      { k:"linewidth", kind:"mm", label:"線の太さ", help:"", show:["vcuts","layer"] },
+      { k:"template", kind:"text", label:"線に添える文字", help:"{pos_mm} などで位置を入れられる", show:["vcuts"] },
+      { k:"textsize", kind:"mm", label:"文字の大きさ", help:"", show:["vcuts"], adv:true },
+      { k:"textoffset", kind:"mm", label:"文字と線の距離", help:"", show:["vcuts"], adv:true },
+      { k:"endprolongation", kind:"mm", label:"文字の無い側の延長", help:"", show:["vcuts"], adv:true },
+      { k:"textprolongation", kind:"mm", label:"文字側の延長", help:"", show:["vcuts"], adv:true }
+    ]},
+  { key: "framing", title: "レール・枠", lead: "パネルの外側に付ける捨て板。実装機の搬送や手で持つための余白になります。",
+    types: [["none","なし",""],["railstb","上下レール","上と下に帯"],["railslr","左右レール","左と右に帯"],["frame","枠","四方を囲む"],["tightframe","ぴったり枠","スロットで抜く"]],
+    fields: [
+      { k:"width", kind:"mm", label:"レール・枠の幅", help:"捨て板の太さ", show:["railstb","railslr","frame","tightframe"] },
+      { k:"hspace", kind:"mm", label:"左右のすき間", help:"基板と枠の間（左右）", show:["railslr","frame","tightframe"] },
+      { k:"vspace", kind:"mm", label:"上下のすき間", help:"基板とレール・枠の間（上下）", show:["railstb","frame","tightframe"] },
+      { k:"cuts", kind:"select", label:"枠にも切り込み", help:"枠を割って外せるようにする方向", show:["frame"], opts:[["both","縦横両方"],["v","縦だけ"],["h","横だけ"],["none","入れない"]] },
+      { k:"slotwidth", kind:"mm", label:"スロット幅", help:"基板の周りをくり抜く溝の幅", show:["tightframe"] },
+      { k:"fillet", kind:"mm", label:"角のフィレット", help:"パネル外形の 4 隅を丸める半径", show:["railstb","railslr","frame","tightframe"] },
+      { k:"chamferwidth", kind:"mm", label:"角の面取り（横）", help:"", show:["railstb","railslr","frame","tightframe"], adv:true },
+      { k:"chamferheight", kind:"mm", label:"角の面取り（縦）", help:"", show:["railstb","railslr","frame","tightframe"], adv:true },
+      { k:"mintotalwidth", kind:"mm", label:"パネルの最小幅", help:"これより小さいと捨て板を足す", show:["railstb","railslr","frame","tightframe"] },
+      { k:"mintotalheight", kind:"mm", label:"パネルの最小高さ", help:"これより小さいと捨て板を足す", show:["railstb","railslr","frame","tightframe"] },
+      { k:"maxtotalwidth", kind:"mm", label:"パネルの最大幅", help:"超えたら KiKit がエラーを出す。初期値 10m は実質無制限", show:["railslr","frame","tightframe"] },
+      { k:"maxtotalheight", kind:"mm", label:"パネルの最大高さ", help:"超えたら KiKit がエラーを出す。初期値 10m は実質無制限", show:["railstb","frame","tightframe"] }
+    ]},
+  { key: "tooling", title: "ツーリング穴", lead: "レールや枠に開ける位置決め用の穴。実装を頼むときに求められることがあります。",
+    types: [["none","なし",""],["3hole","3 つ","角に 3 つ"],["4hole","4 つ","四隅"]],
+    fields: [
+      { k:"hoffset", kind:"mm", label:"端からの距離（横）", help:"パネルの左右の端から穴の中心まで", show:["3hole","4hole"] },
+      { k:"voffset", kind:"mm", label:"端からの距離（縦）", help:"パネルの上下の端から穴の中心まで", show:["3hole","4hole"] },
+      { k:"size", kind:"mm", label:"穴の直径", help:"", show:["3hole","4hole"] },
+      { k:"soldermaskmargin", kind:"mm", label:"ハンダマスク開口の直径", help:"穴の周りのハンダマスクを抜く大きさ（ハンダマスクの拡張）", show:["3hole","4hole"] },
+      { k:"paste", kind:"bool", label:"ハンダペーストにも入れる", help:"", show:["3hole","4hole"], adv:true }
+    ]},
+  { key: "fiducials", title: "フィデューシャルマーク", lead: "実装機がパネルの位置を読み取るための銅の丸印（KiCad のグローバル基準）。",
+    types: [["none","なし",""],["3fid","3 つ","角に 3 つ"],["4fid","4 つ","四隅"]],
+    fields: [
+      { k:"hoffset", kind:"mm", label:"端からの距離（横）", help:"", show:["3fid","4fid"] },
+      { k:"voffset", kind:"mm", label:"端からの距離（縦）", help:"", show:["3fid","4fid"] },
+      { k:"coppersize", kind:"mm", label:"銅の直径", help:"丸印そのものの大きさ", show:["3fid","4fid"] },
+      { k:"opening", kind:"mm", label:"ハンダマスク開口の直径", help:"丸印の周りを抜く大きさ", show:["3fid","4fid"] },
+      { k:"paste", kind:"bool", label:"ハンダペーストにも入れる", help:"", show:["3fid","4fid"], adv:true }
+    ]},
+  { key: "text", title: "文字入れ", lead: "レールや枠にシルクスクリーンで文字を入れます。{boardTitle} {boardRevision} {date} などの変数が使えます。",
+    types: [["none","なし",""],["simple","入れる",""]],
+    fields: [
+      { k:"text", kind:"text", label:"文字", help:"例: {boardTitle} Rev.{boardRevision} {date}", show:["simple"] },
+      { k:"anchor", kind:"select", label:"アンカー", help:"パネルのどこを基準に置くか", show:["simple"], opts:ANCHORS },
+      { k:"hoffset", kind:"mm", label:"横のずらし", help:"", show:["simple"] },
+      { k:"voffset", kind:"mm", label:"縦のずらし", help:"上レールに載せるなら幅の半分くらい", show:["simple"] },
+      { k:"width", kind:"mm", label:"文字の幅", help:"", show:["simple"] },
+      { k:"height", kind:"mm", label:"文字の高さ", help:"", show:["simple"] },
+      { k:"thickness", kind:"mm", label:"線の太さ", help:"", show:["simple"], adv:true },
+      { k:"orientation", kind:"deg", label:"向き", help:"", show:["simple"], adv:true },
+      { k:"layer", kind:"select", label:"レイヤー", help:"裏面（B.〜）はプレビューで鏡文字になります", show:["simple"], opts:TEXT_LAYERS }
+    ]},
+  "TEXT_CLONES",
+  { key: "copperfill", title: "捨て板の銅の塗りつぶし", lead: "レールや枠を銅で塗りつぶして、反りやメッキのムラを減らします。",
+    types: [["none","なし",""],["solid","塗りつぶし",""],["hatched","ハッチング",""],["hex","六角",""]],
+    fields: [
+      { k:"clearance", kind:"mm", label:"基板とのクリアランス", help:"", show:["solid","hatched","hex"] },
+      { k:"edgeclearance", kind:"mm", label:"パネル外周とのクリアランス", help:"", show:["solid","hatched","hex"] },
+      { k:"layers", kind:"text", label:"レイヤー", help:"カンマ区切り。all で全導体レイヤー", show:["solid","hatched","hex"] },
+      { k:"width", kind:"mm", label:"ハッチング幅", help:"", show:["hatched"] },
+      { k:"spacing", kind:"mm", label:"間隔", help:"", show:["hatched","hex"] },
+      { k:"orientation", kind:"deg", label:"ハッチングの角度", help:"", show:["hatched"] },
+      { k:"diameter", kind:"mm", label:"六角の大きさ", help:"", show:["hex"] },
+      { k:"threshold", kind:"pct", label:"小片の切り捨て", help:"これより小さく欠けた六角は消す", show:["hex"] }
+    ]},
+  { key: "post", title: "仕上げ", lead: "パネルを作ったあとの処理。",
+    types: null,
+    fields: [
+      { k:"millradius", kind:"mm", label:"内角の R", help:"フライスで削れない内角を丸める。1mm くらいが目安。0 で無効" },
+      { k:"millradiusouter", kind:"mm", label:"外周だけの R", help:"外形の内角だけを丸める", adv:true },
+      { k:"origin", kind:"select", label:"ドリル/配置ファイルの原点", help:"パネルのどこに原点を置くか", opts:[["","変えない"]].concat(ANCHORS) },
+      { k:"dimensions", kind:"bool", label:"寸法線を描く", help:"パネル全体の寸法線を図面に入れる" },
+      { k:"copperfill", kind:"bool", label:"タブと枠を銅で塗りつぶす", help:"旧方式。上の「捨て板の銅の塗りつぶし」の方が細かく設定できます", adv:true },
+      { k:"reconstructarcs", kind:"bool", label:"円弧を復元", help:"多角形になった円弧を円弧に戻して保存", adv:true },
+      { k:"refillzones", kind:"bool", label:"ゾーンを塗りつぶす", help:"パネル化のあとゾーンを塗りつぶし直す", adv:true },
+      { k:"edgewidth", kind:"mm", label:"基板外形の線幅", help:"Edge.Cuts の線幅", adv:true }
+    ]},
+  { key: "page", title: "ページ設定", lead: "パネルを置く用紙。普通は元の基板と同じで大丈夫です。",
+    types: [["inherit","元と同じ",""],["A4","A4",""],["A3","A3",""],["A4-portrait","A4 縦",""],["custom","サイズ指定",""]],
+    fields: [
+      { k:"anchor", kind:"select", label:"パネルのアンカー", help:"", opts:ANCHORS },
+      { k:"posx", kind:"text", label:"置く位置 X", help:"50% や 100mm" },
+      { k:"posy", kind:"text", label:"置く位置 Y", help:"" },
+      { k:"width", kind:"mm", label:"用紙の幅", help:"", show:["custom"] },
+      { k:"height", kind:"mm", label:"用紙の高さ", help:"", show:["custom"] }
+    ]}
+];
+
+// KiKit は text / text2 / text3 / text4 の 4 つまで文字を入れられる
+{
+  const i = SECTIONS.indexOf("TEXT_CLONES");
+  const base = SECTIONS.find(x => x.key === "text");
+  base.title = "文字入れ %n%"; base.vars = { n: 1 };
+  const clones = [2, 3, 4].map(n => Object.assign({}, base, { key: "text" + n, vars: { n }, lead: "%n% つ目の文字。文字入れ 1 と同じ設定ができます（KiKit では最大 4 つ）。" }));
+  SECTIONS.splice(i, 1, ...clones);
+}
+
+// ---- examples (values are illustrative; tooling values from KiKit's jlcTooling.json) ----
+const PRESETS = [
+  { name: "ミシン目 2×2 + 上下レール", desc: "手で割る試作向けの定番。ツーリング穴とマーク付き",
+    data: { layout:{rows:2, cols:2, hspace:"2mm", vspace:"2mm"}, tabs:{type:"fixed", hwidth:"3mm", vwidth:"3mm", hcount:2, vcount:2}, cuts:{type:"mousebites", drill:"0.5mm", spacing:"0.8mm", offset:"0.25mm"}, framing:{type:"railstb", width:"5mm", vspace:"2mm"}, tooling:{type:"3hole", hoffset:"2.5mm", voffset:"2.5mm", size:"1.152mm", soldermaskmargin:"1.3mm"}, fiducials:{type:"3fid", hoffset:"10mm", voffset:"2.5mm", coppersize:"1mm", opening:"2mm"}, post:{millradius:"1mm"} } },
+  { name: "Vカット 3×3 + 上下レール", desc: "四角い基板をすき間なく並べてVカットで割る",
+    data: { layout:{rows:3, cols:3, hspace:"0mm", vspace:"0mm"}, tabs:{type:"full"}, cuts:{type:"vcuts", clearance:"0.5mm"}, framing:{type:"railstb", width:"5mm", vspace:"0mm"} } },
+  { name: "Vカット + タブ（ルーター併用）", desc: "タブ以外はルーターで抜いて、タブだけ Vカットで割る",
+    data: { layout:{rows:2, cols:2, hspace:"2mm", vspace:"2mm"}, tabs:{type:"fixed", hwidth:"5mm", vwidth:"5mm", hcount:2, vcount:2}, cuts:{type:"vcuts", clearance:"0.5mm"}, framing:{type:"railstb", width:"5mm", vspace:"2mm"}, post:{millradius:"1mm"} } },
+  { name: "ミシン目 + 四方の枠", desc: "形が複雑な基板を枠で守る",
+    data: { layout:{rows:2, cols:3, hspace:"2mm", vspace:"2mm"}, tabs:{type:"spacing", hwidth:"3mm", vwidth:"3mm", spacing:"20mm"}, cuts:{type:"mousebites", drill:"0.5mm", spacing:"0.8mm", offset:"0.25mm"}, framing:{type:"frame", width:"5mm", hspace:"2mm", vspace:"2mm", cuts:"both"}, post:{millradius:"1mm"} } },
+  { name: "初期値（1 枚）", desc: "KiKit の default.json そのまま", data: {} }
+];
+
+const clone = o => JSON.parse(JSON.stringify(o));
+let state = clone(DEFAULTS);
+const UNIT = { mm:"mm", deg:"deg", pct:"%" };
+
+function mergeInto(base, inc) {
+  for (const [sec, obj] of Object.entries(inc || {})) {
+    if (!obj || typeof obj !== "object") continue;
+    if (!base[sec]) base[sec] = {};
+    Object.assign(base[sec], obj);
+  }
+  return base;
+}
+
+// ---- render form ----
+const formEl = document.getElementById("form");
+function fieldId(sec, k) { return "f-" + sec + "-" + k; }
+
+function renderForm() {
+  formEl.querySelectorAll(".sec").forEach(n => n.remove());
+  for (const S of SECTIONS) {
+    const d = document.createElement("details");
+    d.className = "card sec";
+    d.dataset.sec = S.key;
+    if (["layout","tabs","cuts","framing"].includes(S.key)) d.open = true;
+    const sum = document.createElement("summary");
+    sum.innerHTML = `<h2>${esc(T(S.title, S.vars))}</h2><code class="key">${S.key}</code><span class="chip" data-chip></span>`;
+    d.appendChild(sum);
+    const body = document.createElement("div");
+    body.className = "body";
+    body.innerHTML = `<p class="lead">${esc(T(S.lead, S.vars))}</p>`;
+    if (S.types && S.types.length > 1) {
+      const t = document.createElement("div");
+      t.className = "types";
+      t.setAttribute("role", "group");
+      t.setAttribute("aria-label", T("%t%の種類", { t: T(S.title, S.vars) }));
+      for (const [v, l, s] of S.types) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.v = v;
+        b.innerHTML = `${esc(T(l))}${s ? `<small>${esc(T(s))}</small>` : `<small class="mono">${v}</small>`}`;
+        b.addEventListener("click", () => { state[S.key].type = v; update(); });
+        t.appendChild(b);
+      }
+      body.appendChild(t);
+    }
+    const grid = document.createElement("div");
+    grid.className = "fields";
+    const advGrid = document.createElement("div");
+    advGrid.className = "fields";
+    for (const F of S.fields) {
+      const w = document.createElement("div");
+      w.className = "field";
+      w.dataset.k = F.k;
+      const id = fieldId(S.key, F.k);
+      if (F.kind === "bool") {
+        w.innerHTML = `<label class="check" for="${id}"><input type="checkbox" id="${id}"> ${esc(T(F.label))} <code>${F.k}</code></label>`;
+      } else {
+        let ctl;
+        if (F.kind === "select") {
+          ctl = `<select id="${id}">${F.opts.map(([v,l]) => `<option value="${v}">${esc(T(l))}${v && T(l) !== v ? " (" + v + ")" : ""}</option>`).join("")}</select>`;
+        } else {
+          const im = (F.kind === "text") ? "" : ` inputmode="${F.kind === "int" ? "numeric" : "decimal"}"`;
+          ctl = `<input id="${id}"${im} autocomplete="off" spellcheck="false">`;
+        }
+        const unit = UNIT[F.kind] ? `<span class="unit">${UNIT[F.kind]}</span>` : "";
+        w.innerHTML = `<label for="${id}">${esc(T(F.label))} <code>${F.k}</code></label><div class="inp">${ctl}${unit}</div>`;
+      }
+      if (F.help) { const h = document.createElement("div"); h.className = "help"; h.textContent = T(F.help); w.appendChild(h); }
+      const el = w.querySelector("#" + CSS.escape(id));
+      el.addEventListener(F.kind === "bool" || F.kind === "select" ? "change" : "input", () => {
+        state[S.key][F.k] = readField(F, el);
+        update(false);
+      });
+      (F.adv ? advGrid : grid).appendChild(w);
+    }
+    body.appendChild(grid);
+    if (TEXT_KEYS.includes(S.key)) body.appendChild(buildTextSim(S.key));
+    if (advGrid.children.length) {
+      const ad = document.createElement("details");
+      ad.innerHTML = `<summary class="small" style="cursor:pointer">${esc(T("細かい設定"))}</summary>`;
+      advGrid.style.marginTop = "10px";
+      ad.appendChild(advGrid);
+      body.appendChild(ad);
+    }
+    d.appendChild(body);
+    formEl.appendChild(d);
+  }
+}
+
+function readField(F, el) {
+  if (F.kind === "bool") return el.checked;
+  if (F.kind === "select" || F.kind === "text") return el.value;
+  const v = el.value.trim();
+  if (F.kind === "int") { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }
+  // number only → append unit; anything else (e.g. "0.1in", "10m") is kept as typed
+  if (/^-?\d*\.?\d+$/.test(v)) return v + UNIT[F.kind];
+  return v === "" ? "0" + UNIT[F.kind] : v;
+}
+function showField(F, val) {
+  if (F.kind === "bool") return !!val;
+  if (UNIT[F.kind]) {
+    const s = String(val ?? "");
+    return s.endsWith(UNIT[F.kind]) && /^-?\d*\.?\d+$/.test(s.slice(0, -UNIT[F.kind].length)) ? s.slice(0, -UNIT[F.kind].length) : s;
+  }
+  return val ?? "";
+}
+
+function syncForm(all) {
+  for (const S of SECTIONS) {
+    const d = formEl.querySelector(`.sec[data-sec="${S.key}"]`);
+    const type = state[S.key].type;
+    d.querySelectorAll(".types button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === type)));
+    let changes = 0;
+    for (const F of S.fields) {
+      const w = d.querySelector(`.field[data-k="${F.k}"]`);
+      const visible = !F.show || F.show.includes(type);
+      w.hidden = !visible;
+      const el = w.querySelector("input,select");
+      const val = state[S.key][F.k];
+      if (all) {
+        if (F.kind === "bool") el.checked = !!val;
+        else {
+          // 読み込んだ JSON にリストに無い値があれば、選択肢に足して残す
+          if (F.kind === "select" && val != null && ![...el.options].some(o => o.value === String(val))) {
+            el.add(new Option(T("%v%（読み込んだ値）", { v: val }), String(val)));
+          }
+          el.value = showField(F, val);
+        }
+      }
+      const ch = JSON.stringify(val) !== JSON.stringify(DEFAULTS[S.key][F.k]);
+      w.classList.toggle("changed", ch && visible);
+      if (ch) changes++;
+    }
+    if (S.types && type !== DEFAULTS[S.key].type) changes++;
+    const chip = d.querySelector("[data-chip]");
+    const tl = S.types ? T((S.types.find(t => t[0] === type) || [type, type])[1]) : "";
+    chip.textContent = changes ? (tl ? tl + T(" ・ ") : "") + T("%n% 項目変更", { n: changes }) : (tl ? tl + T(" ・ ") : "") + T("初期値");
+    chip.classList.toggle("on", changes > 0);
+  }
+}
+
+// ---- output ----
+const LABELS = {};
+for (const S of SECTIONS) { LABELS[S.key] = { _: [S.title, S.vars] }; for (const F of S.fields) LABELS[S.key][F.k] = F.label; LABELS[S.key].type = "種類"; }
+function labelOf(sec, k) { const l = LABELS[sec] && LABELS[sec][k]; if (!l) return ""; return Array.isArray(l) ? T(l[0], l[1]) : T(l); }
+function typeLabel(sec, v) { const S = SECTIONS.find(s => s.key === sec); const t = S && S.types && S.types.find(t => t[0] === v); return t ? T(t[1]) : ""; }
+
+function buildConfig(diffOnly) {
+  const out = {};
+  for (const sec of Object.keys(state)) {
+    const o = {};
+    for (const [k, v] of Object.entries(state[sec])) {
+      const def = DEFAULTS[sec] ? DEFAULTS[sec][k] : undefined;
+      if (!diffOnly || JSON.stringify(v) !== JSON.stringify(def)) o[k] = v;
+    }
+    if (Object.keys(o).length) out[sec] = o;
+  }
+  return out;
+}
+
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function serialize(cfg, comments) {
+  // returns [plainText, highlightedHtml]
+  const secs = Object.keys(cfg);
+  let t = "{\n", h = "{\n";
+  secs.forEach((sec, i) => {
+    const keys = Object.keys(cfg[sec]);
+    const sc = comments && LABELS[sec] ? `  // ${labelOf(sec, "_")}` : "";
+    t += `  ${JSON.stringify(sec)}: {${sc ? " " + sc.trim() : ""}\n`;
+    h += `  <span class="k">${esc(JSON.stringify(sec))}</span>: {${sc ? ` <span class="c">${esc(sc.trim())}</span>` : ""}\n`;
+    keys.forEach((k, j) => {
+      const v = cfg[sec][k];
+      const comma = j < keys.length - 1 ? "," : "";
+      let lab = comments && LABELS[sec] && LABELS[sec][k] ? labelOf(sec, k) : "";
+      if (comments && k === "type") { const tl = typeLabel(sec, v); if (tl) lab += ": " + tl; }
+      const c = lab ? ` // ${lab}` : "";
+      const vs = JSON.stringify(v);
+      t += `    ${JSON.stringify(k)}: ${vs}${comma}${c}\n`;
+      h += `    <span class="k">${esc(JSON.stringify(k))}</span>: <span class="s">${esc(vs)}</span>${comma}${c ? `<span class="c">${esc(c)}</span>` : ""}\n`;
+    });
+    const sc2 = i < secs.length - 1 ? "," : "";
+    t += `  }${sc2}\n`; h += `  }${sc2}\n`;
+  });
+  t += "}\n"; h += "}\n";
+  if (!secs.length) { t = "{}\n"; h = "{}\n"; }
+  return [t, h];
+}
+
+
+// ---- 文字入れのシミュレーション ----
+// KiKit は Python の str.format で {変数} を置き換える。未知の変数があるとエラーで止まる
+const sample = { boardTitle: "MyBoard", boardRevision: "1.0", boardCompany: "", boardDate: "" };
+try { Object.assign(sample, JSON.parse(localStorage.getItem("kikit-preset-maker-sample") || "{}")); } catch (e) {}
+const TEXT_VARS = ["boardTitle", "boardRevision", "boardDate", "boardCompany", "date", "time24", "year", "month", "day", "boardComment1"];
+function pad2(n) { return String(n).padStart(2, "0"); }
+function textVars() {
+  const d = new Date();
+  const v = {
+    date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+    time24: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+    year: String(d.getFullYear()), month: pad2(d.getMonth() + 1), day: pad2(d.getDate()),
+    hour: pad2(d.getHours()), minute: pad2(d.getMinutes()), second: pad2(d.getSeconds()),
+    boardTitle: sample.boardTitle, boardRevision: sample.boardRevision, boardCompany: sample.boardCompany, boardDate: sample.boardDate
+  };
+  for (let i = 1; i <= 9; i++) v["boardComment" + i] = "";
+  return v;
+}
+// returns { text, unknown:[...], bad:"" }
+function expandText(tpl) {
+  const vars = textVars(), unknown = [];
+  let bad = "";
+  const out = String(tpl).replace(/\{\{|\}\}|\{([^{}]*)\}|[{}]/g, (m, name) => {
+    if (m === "{{") return "{";
+    if (m === "}}") return "}";
+    if (m === "{" || m === "}") { bad = "閉じていない { か } があります"; return m; }
+    const key = name.split(/[:!]/)[0];
+    if (key.startsWith("user-")) return `‹${key.slice(5)}›`;
+    if (key in vars) return vars[key];
+    unknown.push(key); return m;
+  });
+  return { text: out, unknown, bad };
+}
+// KiCad のストロークフォントの文字幅の目安（半角 ≒ 文字幅 × 0.8、全角 ≒ × 1.0）
+function textLen(str, w) {
+  let n = 0;
+  for (const ch of str) n += /[\u0000-ÿ｡-ﾟ]/.test(ch) ? 0.8 : 1.0;
+  return n * w;
+}
+function buildTextSim(key) {
+  const box = document.createElement("div");
+  box.className = "textsim";
+  const first = key === "text";
+  box.innerHTML = `
+    <div class="small"><b style="color:var(--ink)">${esc(T("入る文字のシミュレーション"))}</b>　${esc(first
+      ? T("下の値はプレビュー用で、JSON には入りません。本番では、元の基板のタイトル ブロックの値（PCB エディターの「ファイル → ページ設定」で入れるもの）が使われます。")
+      : T("タイトルなどのプレビュー用の値は「文字入れ 1」で変えられます。"))}</div>
+    ${first ? `<div class="fields">
+      <div class="field"><label for="sm-title">${esc(T("タイトル"))} <code>{boardTitle}</code></label><div class="inp"><input id="sm-title"></div></div>
+      <div class="field"><label for="sm-rev">${esc(T("リビジョン"))} <code>{boardRevision}</code></label><div class="inp"><input id="sm-rev"></div></div>
+      <div class="field"><label for="sm-company">${esc(T("会社名"))} <code>{boardCompany}</code></label><div class="inp"><input id="sm-company"></div></div>
+    </div>` : ""}
+    <div class="small">${esc(T("変数を挿入："))}</div>
+    <div class="vars" data-varbtns></div>
+    <div class="small">${esc(T("実際に入る文字（目安）："))}</div>
+    <div class="rendered" id="textRendered-${key}"></div>
+    <div class="small" id="textSize-${key}"></div>`;
+  if (first) {
+    const map = { "sm-title": "boardTitle", "sm-rev": "boardRevision", "sm-company": "boardCompany" };
+    for (const [id, k] of Object.entries(map)) {
+      const el = box.querySelector("#" + id);
+      el.value = sample[k];
+      el.addEventListener("input", () => {
+        sample[k] = el.value;
+        try { localStorage.setItem("kikit-preset-maker-sample", JSON.stringify(sample)); } catch (e) {}
+        renderPreview(); renderTextSim();
+      });
+    }
+  }
+  const vb = box.querySelector("[data-varbtns]");
+  for (const v of TEXT_VARS) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "{" + v + "}";
+    b.addEventListener("click", () => {
+      const ti = document.getElementById(fieldId(key, "text"));
+      const st = ti.selectionStart ?? ti.value.length, en = ti.selectionEnd ?? ti.value.length;
+      ti.value = ti.value.slice(0, st) + "{" + v + "}" + ti.value.slice(en);
+      if (state[key].type === "none") state[key].type = "simple";
+      state[key].text = ti.value;
+      update(true);
+      ti.focus(); const pos = st + v.length + 2; ti.setSelectionRange(pos, pos);
+    });
+    vb.appendChild(b);
+  }
+  return box;
+}
+function renderTextSim() {
+  for (const key of TEXT_KEYS) {
+    const r = document.getElementById("textRendered-" + key), z = document.getElementById("textSize-" + key);
+    if (!r) continue;
+    const t = state[key];
+    if (t.type === "none") { r.textContent = T("（「なし」になっています）"); r.classList.remove("bad"); z.textContent = ""; continue; }
+    const e = expandText(t.text);
+    r.textContent = e.text || T("（空）");
+    r.classList.toggle("bad", e.unknown.length > 0 || !!e.bad);
+    z.textContent = T("長さ 約 %l% mm × 高さ %h% mm（%n% 文字）", { l: textLen(e.text, num(t.width)).toFixed(1), h: num(t.height), n: e.text.length });
+  }
+}
+// 文字の位置と外接矩形（KiKit: パネル全体の外形を基準に anchor + offset、Y は下向き、角度は反時計回り）
+function textGeom(Tx, W, H) {
+  const e = expandText(Tx.text);
+  const th = num(Tx.height), L2 = textLen(e.text, num(Tx.width));
+  const A = { tl:[0,0], mt:[W/2,0], tr:[W,0], ml:[0,H/2], c:[W/2,H/2], mr:[W,H/2], bl:[0,H], mb:[W/2,H], br:[W,H] }[Tx.anchor] || [W/2, 0];
+  const px = A[0] + num(Tx.hoffset), py = A[1] + num(Tx.voffset);
+  const x0 = Tx.hjustify === "left" ? 0 : Tx.hjustify === "right" ? -L2 : -L2 / 2;
+  const y0 = Tx.vjustify === "top" ? 0 : Tx.vjustify === "bottom" ? -th : -th / 2;
+  const ang = num(Tx.orientation);
+  const rad = -ang * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+  const pts = [[x0, y0], [x0 + L2, y0], [x0, y0 + th], [x0 + L2, y0 + th]].map(([x, y]) => [px + x * co - y * si, py + x * si + y * co]);
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  return { e, th, L2, px, py, x0, y0, ang, back: /^B\./.test(Tx.layer),
+    box: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), len: L2, th, str: e.text, unknown: e.unknown, bad: e.bad } };
+}
+
+let lastText = "";
+function renderOutput() {
+  const diff = document.getElementById("optDiff").checked;
+  const com = document.getElementById("optComment").checked;
+  const [t, h] = serialize(buildConfig(diff), com);
+  lastText = t;
+  document.getElementById("out").innerHTML = h;
+  const fn = document.getElementById("fname").value || "panel-preset.json";
+  document.getElementById("cli").textContent = T("kikit panelize -p %f% 元の基板.kicad_pcb パネル.kicad_pcb", { f: fn });
+}
+
+// ---- preview ----
+const num = s => { const m = /^(-?\d*\.?\d+)\s*(mm|cm|m|in|inch|mil|deg|%)?$/.exec(String(s).trim()); if (!m) return 0; const n = parseFloat(m[1]); return { cm: n*10, m: n*1000, in: n*25.4, inch: n*25.4, mil: n*0.0254 }[m[2]] ?? n; };
+
+let geo = null;
+function renderPreview() {
+  const svg = document.getElementById("svg");
+  const L = state.layout, Fr = state.framing, C = state.cuts, TL = state.tooling, Fi = state.fiducials;
+  let bw = Math.max(1, num(document.getElementById("pw").value)), bh = Math.max(1, num(document.getElementById("ph").value));
+  const rot = ((num(L.rotation) % 360) + 360) % 360;
+  if (rot === 90 || rot === 270) [bw, bh] = [bh, bw];
+  const rows = Math.max(1, Math.min(20, L.rows | 0)), cols = Math.max(1, Math.min(20, L.cols | 0));
+  const hs = num(L.hspace), vs = num(L.vspace);
+  const gw = cols * bw + (cols - 1) * hs, gh = rows * bh + (rows - 1) * vs;
+  const ft = Fr.type, fw = num(Fr.width);
+  const fhs = num(Fr.hspace), fvs = num(Fr.vspace);
+  let left = 0, right = 0, top = 0, bottom = 0, lgap = 0, tgap = 0;
+  if (ft === "railstb") { top = bottom = fw; tgap = fvs; }
+  if (ft === "railslr") { left = right = fw; lgap = fhs; }
+  if (ft === "frame" || ft === "tightframe") { top = bottom = left = right = fw; tgap = fvs; lgap = fhs; }
+  let W = left + lgap + gw + lgap + right, H = top + tgap + gh + tgap + bottom;
+  const minW = ft !== "none" ? num(Fr.mintotalwidth) : 0, minH = ft !== "none" ? num(Fr.mintotalheight) : 0;
+  if (W < minW) { const add = (minW - W) / 2; left += add; right += add; W = minW; }
+  if (H < minH) { const add = (minH - H) / 2; top += add; bottom += add; H = minH; }
+
+  const pad = Math.max(W, H) * 0.06 + 2;
+  const vbW = W + pad * 2, vbH = H + pad * 2;
+  svg.setAttribute("viewBox", `${-pad} ${-pad} ${vbW} ${vbH}`);
+  const sw = Math.max(W, H) / 400;
+  let g = "";
+  // frame / rails
+  const railFill = `fill="var(--rail)" stroke="var(--board-edge)" stroke-width="${sw}"`;
+  if (ft === "frame" || ft === "tightframe") {
+    g += `<path d="M0 0H${W}V${H}H0Z M${left} ${top}V${H-bottom}H${W-right}V${top}Z" fill-rule="evenodd" ${railFill}/>`;
+    if (ft === "tightframe") g += `<rect x="${left}" y="${top}" width="${W-left-right}" height="${H-top-bottom}" ${railFill}/>`;
+  } else {
+    if (top) g += `<rect x="0" y="0" width="${W}" height="${top}" ${railFill}/>`;
+    if (bottom) g += `<rect x="0" y="${H-bottom}" width="${W}" height="${bottom}" ${railFill}/>`;
+    if (left) g += `<rect x="0" y="0" width="${left}" height="${H}" ${railFill}/>`;
+    if (right) g += `<rect x="${W-right}" y="0" width="${right}" height="${H}" ${railFill}/>`;
+  }
+  const ox = left + lgap, oy = top + tgap;
+  // tabs (approximate) for mousebites / gaps
+  const gapTabs = state.tabs.type !== "full";
+  // KiKit panelize.py と同じ考え方: 左右の辺(縦の辺)は hcount/hwidth、上下の辺(横の辺)は vcount/vwidth
+  const TB = state.tabs;
+  const maxTabCount = (len, w, minD) => len < w ? 0 : Math.max(0, 1 + Math.floor((len - minD) / (minD + w)));
+  const tabWidth = vertEdge => num(vertEdge ? TB.hwidth : TB.vwidth);
+  const tabsPerEdge = (len, vertEdge) => {
+    const w = tabWidth(vertEdge);
+    if (TB.type === "fixed") return Math.min(Math.max(0, (vertEdge ? TB.hcount : TB.vcount) | 0), maxTabCount(len, w, num(TB.mindistance)));
+    return maxTabCount(len, w, num(TB.spacing));
+  };
+  let tabs = "", bites = "", tabCount = 0;
+  const tabStyle = `fill="var(--tab)" stroke="var(--copper)" stroke-width="${sw*0.8}"`;
+  // KiKit の tabSpacing(): 辺の長さを (数 + 1) 等分した位置に置く
+  const drawVTab = (x, y0, len, gap) => { const n = tabsPerEdge(len, true), tw = tabWidth(true); for (let i = 1; i <= n; i++) { const cy = y0 + len * i / (n + 1); tabCount++; tabs += `<rect x="${x}" y="${cy - tw/2}" width="${gap}" height="${tw}" ${tabStyle}/>`; bites += `<line x1="${x}" y1="${cy - tw/2}" x2="${x}" y2="${cy + tw/2}"/><line x1="${x+gap}" y1="${cy - tw/2}" x2="${x+gap}" y2="${cy + tw/2}"/>`; } };
+  const drawHTab = (y, x0, len, gap) => { const n = tabsPerEdge(len, false), tw = tabWidth(false); for (let i = 1; i <= n; i++) { const cx = x0 + len * i / (n + 1); tabCount++; tabs += `<rect x="${cx - tw/2}" y="${y}" width="${tw}" height="${gap}" ${tabStyle}/>`; bites += `<line x1="${cx - tw/2}" y1="${y}" x2="${cx + tw/2}" y2="${y}"/><line x1="${cx - tw/2}" y1="${y+gap}" x2="${cx + tw/2}" y2="${y+gap}"/>`; } };
+  if (TB.type === "fixed" || TB.type === "spacing") {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = ox + c * (bw + hs), y = oy + r * (bh + vs);
+      if (c < cols - 1 && hs > 0) drawVTab(x + bw, y, bh, hs);
+      if (r < rows - 1 && vs > 0) drawHTab(y + bh, x, bw, vs);
+      if (r === 0 && tgap > 0 && top) drawHTab(y - tgap, x, bw, tgap);
+      if (r === rows - 1 && tgap > 0 && bottom) drawHTab(y + bh, x, bw, tgap);
+      if (c === 0 && lgap > 0 && left) drawVTab(x - lgap, y, bh, lgap);
+      if (c === cols - 1 && lgap > 0 && right) drawVTab(x + bw, y, bh, lgap);
+    }
+  } else if (TB.type === "full") {
+    // 全面つなぎ: すき間をすべて基材で埋める
+    const fill = (x, y, w, h) => { if (w > 0 && h > 0) tabs += `<rect x="${x}" y="${y}" width="${w}" height="${h}" ${tabStyle}/>`; };
+    for (let c = 1; c < cols; c++) fill(ox + c * bw + (c - 1) * hs, oy, hs, gh);
+    for (let r = 1; r < rows; r++) fill(ox, oy + r * bh + (r - 1) * vs, gw, vs);
+    if (top) fill(ox - lgap, oy - tgap, gw + 2 * lgap, tgap);
+    if (bottom) fill(ox - lgap, oy + gh, gw + 2 * lgap, tgap);
+    if (left) fill(ox - lgap, oy, lgap, gh);
+    if (right) fill(ox + gw, oy, lgap, gh);
+  }
+  g += tabs;
+  // boards
+  const alt = L.alternation;
+  const fs = Math.min(bw, bh) * 0.32;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = ox + c * (bw + hs), y = oy + r * (bh + vs);
+    const flip = (alt === "rows" && r % 2) || (alt === "cols" && c % 2) || (alt === "rowsCols" && (r + c) % 2);
+    const n = r * cols + c + 1;
+    g += `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="${Math.min(bw,bh)*0.03}" fill="var(--board)" stroke="var(--board-edge)" stroke-width="${sw*1.5}"/>`;
+    g += `<text x="${x + bw/2}" y="${y + bh/2}" font-size="${fs}" fill="#ffffff" fill-opacity=".9" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Mono, monospace" transform="rotate(${(flip ? 180 : 0) + rot} ${x + bw/2} ${y + bh/2})">F${n}</text>`;
+  }
+  // cuts
+  if (C.type === "vcuts") {
+    let lines = "";
+    const ext = Math.max(W, H) * 0.03;
+    // KiKit はタブの「基板側の付け根」に切り込み線を作り、それをパネルの端から端まで伸ばして V カットにする。
+    // すき間が 0 なら境目に 1 本、すき間があれば両側の基板の縁に 1 本ずつ入る
+    // タブが 0 本の方向には切り込み線ができないので、その方向の V カットも入らない
+    const full = TB.type === "full", lrN = tabsPerEdge(bh, true), tbN = tabsPerEdge(bw, false);
+    const cutLR = gap => gap <= 0 || full || lrN > 0, cutTB = gap => gap <= 0 || full || tbN > 0;
+    const xs = new Set(), ys = new Set();
+    for (let c = 0; c < cols; c++) {
+      const xl = ox + c * (bw + hs), xr = xl + bw;
+      if ((c > 0 && cutLR(hs)) || (c === 0 && left && cutLR(lgap))) xs.add(+xl.toFixed(4));
+      if ((c < cols - 1 && cutLR(hs)) || (c === cols - 1 && right && cutLR(lgap))) xs.add(+xr.toFixed(4));
+    }
+    for (let r = 0; r < rows; r++) {
+      const yt = oy + r * (bh + vs), yb = yt + bh;
+      if ((r > 0 && cutTB(vs)) || (r === 0 && top && cutTB(tgap))) ys.add(+yt.toFixed(4));
+      if ((r < rows - 1 && cutTB(vs)) || (r === rows - 1 && bottom && cutTB(tgap))) ys.add(+yb.toFixed(4));
+    }
+    for (const x of xs) lines += `<line x1="${x}" y1="${-ext}" x2="${x}" y2="${H + ext}"/>`;
+    for (const y of ys) lines += `<line x1="${-ext}" y1="${y}" x2="${W + ext}" y2="${y}"/>`;
+    g += `<g stroke="var(--cut)" stroke-width="${sw*2}" stroke-dasharray="${sw*8} ${sw*4}">${lines}</g>`;
+  } else if (C.type === "mousebites" && gapTabs) {
+    g += `<g stroke="var(--copper)" stroke-width="${sw*2.5}" stroke-dasharray="${sw*2} ${sw*2}" stroke-linecap="round">${bites}</g>`;
+  }
+  // tooling & fiducials
+  const corners = (n, ho, vo) => { const p = [[ho, vo], [W - ho, vo], [ho, H - vo], [W - ho, H - vo]]; return n === 3 ? [p[0], p[1], p[2]] : p; };
+  if (TL.type !== "none") {
+    const r = Math.max(num(TL.size) / 2, sw * 2);
+    for (const [x, y] of corners(TL.type === "3hole" ? 3 : 4, num(TL.hoffset), num(TL.voffset))) g += `<circle cx="${x}" cy="${y}" r="${r}" fill="var(--bg)" stroke="var(--board-edge)" stroke-width="${sw}"/>`;
+  }
+  if (Fi.type !== "none") {
+    const r = Math.max(num(Fi.coppersize) / 2, sw * 2), ro = Math.max(num(Fi.opening) / 2, r);
+    for (const [x, y] of corners(Fi.type === "3fid" ? 3 : 4, num(Fi.hoffset), num(Fi.voffset))) g += `<circle cx="${x}" cy="${y}" r="${ro}" fill="none" stroke="var(--copper)" stroke-width="${sw*0.8}" stroke-dasharray="${sw*1.5} ${sw*1.5}"/><circle cx="${x}" cy="${y}" r="${r}" fill="var(--copper)"/>`;
+  }
+  // boards list for checks
+  const boards = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) boards.push({ x: ox + c * (bw + hs), y: oy + r * (bh + vs), w: bw, h: bh });
+  // texts (KiKit: text, text2, text3, text4)
+  const texts = [];
+  TEXT_KEYS.forEach((key, idx) => {
+    const Tx = state[key]; if (Tx.type !== "simple") return;
+    const t = textGeom(Tx, W, H);
+    texts.push(Object.assign({ key, n: idx + 1 }, t.box));
+    if (t.e.text && t.L2 > 0 && t.th > 0) {
+      g += `<g transform="translate(${t.px} ${t.py}) rotate(${-t.ang})">` +
+        `<rect x="${t.x0}" y="${t.y0}" width="${t.L2}" height="${t.th}" fill="none" stroke="var(--ink)" stroke-opacity=".35" stroke-width="${sw*0.6}" stroke-dasharray="${sw*2} ${sw*2}"/>` +
+        `<text x="${t.back ? -(t.x0 + t.L2) : t.x0}" y="${t.y0 + t.th}" font-size="${t.th / 0.7}" font-family="IBM Plex Mono, monospace" textLength="${t.L2}" lengthAdjust="spacingAndGlyphs" fill="#fbfbf6" stroke="#1d2420" stroke-width="${t.th*0.06}" paint-order="stroke"${t.back ? ` transform="scale(-1 1)"` : ""}>${esc(t.e.text)}</text></g>`;
+    }
+  });
+  geo = { W, H, top, bottom, left, right, tgap, lgap, fw, boards, texts, rows, cols, hs, vs, tabsLR: tabsPerEdge(bh, true), tabsTB: tabsPerEdge(bw, false) };
+  // outline
+  g += `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="var(--ink)" stroke-opacity=".35" stroke-width="${sw}"/>`;
+  svg.innerHTML = g;
+  const cutName = T({ none: "なし", mousebites: "ミシン目", vcuts: "Vカット", layer: "線だけ描く" }[C.type] || C.type);
+  document.getElementById("stats").innerHTML =
+    T("<span>パネル <b>%w% × %h%</b> mm</span><span>基板 <b>%n%</b> 枚</span><span>カット <b>%c%</b></span>", { w: W.toFixed(1), h: H.toFixed(1), n: rows * cols, c: esc(cutName) }) +
+    (TB.type === "fixed" || TB.type === "spacing" ? T("<span>タブ <b>%n%</b> 本</span>", { n: tabCount }) : TB.type === "full" ? T("<span>タブ <b>全面</b></span>") : T("<span>タブは基板のアノテーション（kikit:Tab）の位置に入るので、プレビューには出ません</span>"));
+  renderWarnings();
+}
+
+
+// ---- fit: 上限サイズから枚数を決める ----
+// KiKit の makeRailsTb / makeRailsLr / makeFrame と同じく、外側に (枠の幅 + すき間) を足して計算する
+function frameExtras() {
+  const Fr = state.framing, w = num(Fr.width);
+  const t = Fr.type;
+  return {
+    L: (t === "railslr" || t === "frame" || t === "tightframe") ? w + num(Fr.hspace) : 0,
+    T: (t === "railstb" || t === "frame" || t === "tightframe") ? w + num(Fr.vspace) : 0
+  };
+}
+function fitFor(bw, bh, Wmax, Hmax) {
+  const hs = num(state.layout.hspace), vs = num(state.layout.vspace);
+  const { L, TT } = frameExtras();
+  const cols = Math.max(0, Math.floor((Wmax - 2 * L + hs) / (bw + hs) + 1e-9));
+  const rows = Math.max(0, Math.floor((Hmax - 2 * TT + vs) / (bh + vs) + 1e-9));
+  const W = cols ? cols * bw + (cols - 1) * hs + 2 * L : 0;
+  const H = rows ? rows * bh + (rows - 1) * vs + 2 * TT : 0;
+  return { rows, cols, n: rows * cols, W, H };
+}
+let fitOpts = [];
+function renderFit() {
+  const bw = num(document.getElementById("pw").value), bh = num(document.getElementById("ph").value);
+  const Wmax = num(document.getElementById("maxW").value), Hmax = num(document.getElementById("maxH").value);
+  const box = document.getElementById("fitRes");
+  if (!(bw > 0 && bh > 0 && Wmax > 0 && Hmax > 0)) { box.innerHTML = `<div class="warn">${esc(T("基板の外形と上限サイズを数字で入れてください"))}</div>`; fitOpts = []; return; }
+  fitOpts = [
+    Object.assign({ rot: "0deg", name: T("回転なし"), bw, bh }, fitFor(bw, bh, Wmax, Hmax)),
+    Object.assign({ rot: "90deg", name: T("90° 回転"), bw: bh, bh: bw }, fitFor(bh, bw, Wmax, Hmax))
+  ];
+  const best = fitOpts[1].n > fitOpts[0].n ? 1 : 0;
+  const curRot = ((num(state.layout.rotation) % 180) + 180) % 180 === 90 ? "90deg" : "0deg";
+  let html = fitOpts.map((o, i) => {
+    const active = o.n > 0 && state.layout.rows === o.rows && state.layout.cols === o.cols && curRot === o.rot;
+    const body = o.n > 0
+      ? `<div class="big">${o.n} <small>${esc(T("枚（縦 %r% × 横 %c%）", { r: o.rows, c: o.cols }))}</small></div>
+         <div class="meta">${esc(T("基板 %bw%×%bh% mm → パネル %w% × %h% mm", { bw: o.bw, bh: o.bh, w: o.W.toFixed(1), h: o.H.toFixed(1) }))}</div>
+         <button class="btn${i === best ? " primary" : ""}" type="button" data-fit="${i}"${active ? " disabled" : ""}>${esc(active ? T("反映済み") : T("これにする"))}</button>`
+      : `<div class="big">0 <small>${esc(T("枚"))}</small></div><div class="meta">${esc(T("基板 %bw%×%bh% mm は上限に 1 枚も収まりません", { bw: o.bw, bh: o.bh }))}</div>`;
+    return `<div class="fitopt${i === best && o.n > 0 ? " best" : ""}"><div class="tag">${esc(o.name)}${i === best && o.n > 0 && fitOpts[0].n !== fitOpts[1].n ? esc(T(" ・ こっちが多い")) : ""}</div>${body}</div>`;
+  }).join("");
+  const notes = [];
+  if (state.framing.type === "none" && document.getElementById("fitGuard").checked) notes.push(esc(T("レール・枠が「なし」のときは、KiKit は maxtotal〜 をチェックしません。")));
+  if (state.framing.type === "railstb") notes.push(esc(T("上下レールのとき、KiKit がチェックするのは高さ（maxtotalheight）だけです。")));
+  if (state.framing.type === "railslr") notes.push(esc(T("左右レールのとき、KiKit がチェックするのは幅（maxtotalwidth）だけです。")));
+  if (state.layout.alternation !== "none") notes.push(esc(T("互い違いは 180° 回転なので、サイズの計算には影響しません。")));
+  if (notes.length) html += `<div class="small" style="grid-column:1/-1">${notes.join("<br>")}</div>`;
+  box.innerHTML = html;
+  box.querySelectorAll("[data-fit]").forEach(b => b.addEventListener("click", () => applyFit(+b.dataset.fit)));
+}
+function applyFit(i) {
+  const o = fitOpts[i]; if (!o || !o.n) return;
+  state.layout.rows = o.rows; state.layout.cols = o.cols; state.layout.rotation = o.rot;
+  if (document.getElementById("fitGuard").checked && state.framing.type !== "none") {
+    state.framing.maxtotalwidth = num(document.getElementById("maxW").value) + "mm";
+    state.framing.maxtotalheight = num(document.getElementById("maxH").value) + "mm";
+  }
+  update(true);
+  toast(T("縦 %r% × 横 %c%（%name%）を反映しました", { r: o.rows, c: o.cols, name: o.name }));
+}
+
+
+// ---- プレビューのチェックと「直す」ボタン ----
+const overlap = (a, b) => a.x < b.x + b.w - 1e-6 && b.x < a.x + a.w - 1e-6 && a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6;
+const circleHitsRect = (cx, cy, r, b) => { const nx = Math.max(b.x, Math.min(cx, b.x + b.w)), ny = Math.max(b.y, Math.min(cy, b.y + b.h)); return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r - 1e-6; };
+function cornerPts(n, ho, vo) { const { W, H } = geo; const p = [[ho, vo], [W - ho, vo], [ho, H - vo], [W - ho, H - vo]]; return n === 3 ? p.slice(0, 3) : p; }
+// ツーリング穴とフィデューシャル（レジスト開口ぶん）の円
+function markCircles() {
+  const out = [], TL = state.tooling, F = state.fiducials;
+  if (TL.type !== "none") for (const [x, y] of cornerPts(TL.type === "3hole" ? 3 : 4, num(TL.hoffset), num(TL.voffset))) out.push({ x, y, r: Math.max(num(TL.size), num(TL.soldermaskmargin)) / 2, name: "ツーリング穴" });
+  if (F.type !== "none") for (const [x, y] of cornerPts(F.type === "3fid" ? 3 : 4, num(F.hoffset), num(F.voffset))) out.push({ x, y, r: Math.max(num(F.coppersize), num(F.opening)) / 2, name: "フィデューシャルマーク" });
+  return out;
+}
+function railCenterOffsets() {
+  // ツーリング穴・マークをレール（枠）の真ん中に置くときの hoffset / voffset
+  const t = state.framing.type, fw = num(state.framing.width);
+  if (t === "railstb") return { v: fw / 2 };
+  if (t === "railslr") return { h: fw / 2 };
+  return { h: fw / 2, v: fw / 2 };
+}
+function addRailsTb() {
+  state.framing.type = "railstb";
+  if (num(state.framing.width) < 5) state.framing.width = "5mm";
+  state.framing.vspace = state.cuts.type === "vcuts" ? "0mm" : (num(state.layout.vspace) > 0 ? state.layout.vspace : "2mm");
+}
+// 空いているレール上の場所を順に試して、基板・ほかの文字・パネル外と重ならない所に置く
+function placeTextOnRail(key) {
+  renderPreview();
+  const t = state.framing.type, fw = num(state.framing.width), TX = state[key];
+  const maxH = Math.max(0.8, Math.floor(fw * 0.5 * 10) / 10);
+  if (num(TX.height) > maxH) { TX.height = maxH + "mm"; TX.width = maxH + "mm"; }
+  const m = Math.max(8, fw * 2) + "mm", mm = "-" + Math.max(8, fw * 2) + "mm";
+  const half = (fw / 2) + "mm", nhalf = (-fw / 2) + "mm";
+  const C = (anchor, h, v, hj, rot = "0deg") => ({ anchor, hoffset: h, voffset: v, hjustify: hj, vjustify: "center", orientation: rot });
+  const cands = t === "railslr"
+    ? [C("ml", half, "0mm", "center", "90deg"), C("mr", nhalf, "0mm", "center", "90deg"), C("tl", half, m, "right", "90deg"), C("bl", half, mm, "left", "90deg"), C("tr", nhalf, m, "right", "90deg"), C("br", nhalf, mm, "left", "90deg")]
+    : [C("mt", "0mm", half, "center"), C("mb", "0mm", nhalf, "center"), C("tl", m, half, "left"), C("tr", mm, half, "right"), C("bl", m, nhalf, "left"), C("br", mm, nhalf, "right")];
+  const others = geo.texts.filter(x => x.key !== key);
+  const marks = markCircles();
+  const ok = c => {
+    const b = textGeom(Object.assign({}, TX, c), geo.W, geo.H).box;
+    return !(b.x < 0 || b.y < 0 || b.x + b.w > geo.W || b.y + b.h > geo.H) && !geo.boards.some(x => overlap(b, x)) && !others.some(x => overlap(b, x)) && !marks.some(c => circleHitsRect(c.x, c.y, c.r + 0.3, b));
+  };
+  Object.assign(TX, cands.find(ok) || cands[0]);
+}
+
+function collectWarnings() {
+  const W = [], L = state.layout, C = state.cuts, Fr = state.framing, Tb = state.tabs;
+  const g = geo, n = g.rows * g.cols, framed = Fr.type !== "none";
+  const add = (lv, title, why, fixLabel, fix) => W.push({ lv, title: T(title), why: T(why), fixLabel: fixLabel && T(fixLabel), fix });
+
+  // 切り離し方
+  const anyGap = (g.cols > 1 && g.hs > 0) || (g.rows > 1 && g.vs > 0) || g.tgap > 0 || g.lgap > 0;
+  if (C.type === "vcuts" && !anyGap && Tb.type !== "full") {
+    add("info", "すき間なしの Vカットなら、タブは「全面つなぎ」が定番です",
+      "基板どうしを辺全体でつないでおき、境目を Vカットで割る組み合わせです。",
+      "タブを全面つなぎにする", () => { Tb.type = "full"; });
+  }
+  if (C.type === "vcuts" && anyGap && Tb.type === "full") {
+    add("info", "すき間をタブで全部埋めています",
+      "この形だと、すき間の部分も含めて辺全体が Vカットで割れます。タブを「数で配置」にすると、タブ以外はルーターで抜かれて、Vカットで割れる（ヤスリがけが必要な）部分がタブの所だけになります。",
+      "タブを数で配置にする（ルーター併用）", () => { Tb.type = "fixed"; Tb.hwidth = "5mm"; Tb.vwidth = "5mm"; Tb.hcount = 2; Tb.vcount = 2; });
+  }
+  const minGap = Math.min(...[g.cols > 1 ? g.hs : Infinity, g.rows > 1 ? g.vs : Infinity, g.tgap > 0 ? g.tgap : Infinity, g.lgap > 0 ? g.lgap : Infinity]);
+  if ((C.type === "vcuts" || C.type === "mousebites") && Tb.type !== "full" && minGap > 0 && minGap < 1) {
+    add("warn", T("すき間が %g%mm と狭いです", { g: minGap }),
+      "タブ以外のすき間はルーター（エンドミル）で抜くので、刃が通る幅が必要です。メーカーの「最小スロット幅」「ルーター径」を確認してください。2mm 前後にしておくと多くのメーカーで安心です。",
+      "すき間を 2mm にする", () => { L.hspace = "2mm"; L.vspace = "2mm"; if (framed) { Fr.hspace = "2mm"; Fr.vspace = "2mm"; } });
+  }
+  if (C.type === "mousebites" && ((g.cols > 1 && g.hs <= 0) || (g.rows > 1 && g.vs <= 0) || (framed && (g.tgap <= 0 && (g.top || g.bottom) || g.lgap <= 0 && (g.left || g.right))))) {
+    add("err", "ミシン目なのに、基板の間にすき間がありません",
+      "ミシン目は、すき間に渡したタブに小さな穴を並べて折る方式です。すき間が 0 だとタブを作れないので、基板が切り離せません。",
+      "すき間を 2mm にする", () => { L.hspace = "2mm"; L.vspace = "2mm"; if (framed) { Fr.hspace = "2mm"; Fr.vspace = "2mm"; } });
+  }
+  if (C.type === "none" && (n > 1 || framed)) {
+    const noGap = g.hs <= 0 && g.vs <= 0;
+    add("warn", "切り離し方が「なし」になっています",
+      "タブに切り込みが入らないので、パネルから基板を外せません（KiKit の確認用なら問題ありません）。",
+      noGap ? "Vカットにする" : "ミシン目にする", () => {
+        if (noGap) { C.type = "vcuts"; Tb.type = "full"; }
+        else { C.type = "mousebites"; C.drill = "0.5mm"; C.spacing = "0.8mm"; C.offset = "0.25mm"; }
+      });
+  }
+
+  // つながり：タブが 0 本の方向があると、パネルがバラバラになることがある
+  if (Tb.type === "fixed" || Tb.type === "spacing") {
+    const R = g.rows, Cc = g.cols, N = R * Cc;
+    const par = [...Array(N + 4).keys()];
+    const find = x => par[x] === x ? x : (par[x] = find(par[x]));
+    const join = (a, b) => { par[find(a)] = find(b); };
+    const TOP = N, BOT = N + 1, LFT = N + 2, RGT = N + 3;
+    const linkLR = g.hs <= 0 || g.tabsLR > 0, linkTB = g.vs <= 0 || g.tabsTB > 0;
+    const railLR = g.lgap <= 0 || g.tabsLR > 0, railTB = g.tgap <= 0 || g.tabsTB > 0;
+    const used = new Set();
+    for (let r = 0; r < R; r++) for (let c = 0; c < Cc; c++) {
+      const i = r * Cc + c; used.add(i);
+      if (c < Cc - 1 && linkLR) join(i, i + 1);
+      if (r < R - 1 && linkTB) join(i, i + Cc);
+      if (r === 0 && g.top && railTB) { join(i, TOP); used.add(TOP); }
+      if (r === R - 1 && g.bottom && railTB) { join(i, BOT); used.add(BOT); }
+      if (c === 0 && g.left && railLR) { join(i, LFT); used.add(LFT); }
+      if (c === Cc - 1 && g.right && railLR) { join(i, RGT); used.add(RGT); }
+    }
+    if (Fr.type === "frame" || Fr.type === "tightframe") { join(TOP, BOT); join(TOP, LFT); join(TOP, RGT); used.add(TOP); }
+    if (g.top) used.add(TOP); if (g.bottom) used.add(BOT); if (g.left) used.add(LFT); if (g.right) used.add(RGT);
+    const groups = new Set([...used].map(find));
+    if (groups.size > 1 && (N > 1 || framed)) {
+      const zeroLR = g.tabsLR === 0, zeroTB = g.tabsTB === 0;
+      add("err", "パネルがバラバラに分かれてしまいます",
+        T("タブが 0 本の方向があって、どこにもつながっていない基板やレールがあります（%n% つに分かれます）。", { n: groups.size }) +
+        (zeroLR ? T("左右の辺のタブ数（hcount）が 0 なので、左右はルーターで切り離されます。その場合は、上下にレールを付けて、上下方向でつなぐ必要があります。") : "") +
+        (zeroTB ? T("上下の辺のタブ数（vcount）が 0 なので、上下はルーターで切り離されます。その場合は、左右にレールを付けて、左右方向でつなぐ必要があります。") : ""),
+        zeroLR && !zeroTB ? "上下レールを付けて、上下でつなぐ" : !zeroLR && zeroTB ? "左右レールを付けて、左右でつなぐ" : "タブを各辺 2 本にする",
+        () => {
+          if (zeroLR && !zeroTB) { addRailsTb(); }
+          else if (!zeroLR && zeroTB) { Fr.type = "railslr"; if (num(Fr.width) < 5) Fr.width = "5mm"; Fr.hspace = num(L.hspace) > 0 ? L.hspace : "2mm"; }
+          else { Tb.type = "fixed"; Tb.hcount = 2; Tb.vcount = 2; }
+        });
+    }
+  }
+
+  // ツーリング穴・フィデューシャル
+  for (const [sec, nameJa, nf, sizeKey] of [["tooling", "ツーリング穴", s => s === "3hole" ? 3 : 4, "size"], ["fiducials", "フィデューシャルマーク", s => s === "3fid" ? 3 : 4, "opening"]]) {
+    const S = state[sec]; if (S.type === "none") continue;
+    const name = TM(nameJa);
+    if (!framed) {
+      add("warn", T("%name%を置くレールや枠がありません", { name }),
+        T(sec === "tooling" ? "ツーリング穴はパネルの外側の捨て板（レール・枠）に置くものです。枠が「なし」だと、基板そのものの上に穴が開いてしまいます。" : "フィデューシャルマークはパネルの外側の捨て板（レール・枠）に置くものです。枠が「なし」だと、基板そのものの上にマークが載ってしまいます。"),
+        "上下レールを足して、その上に置く", () => { addRailsTb(); const o = railCenterOffsets(); S.voffset = o.v + "mm"; if (num(S.hoffset) < num(Fr.width)) S.hoffset = Math.max(num(Fr.width), 5) + "mm"; });
+      continue;
+    }
+    const r = num(S[sizeKey]) / 2;
+    const hits = cornerPts(nf(S.type), num(S.hoffset), num(S.voffset)).some(([x, y]) => g.boards.some(b => circleHitsRect(x, y, r, b)) || x - r < 0 || y - r < 0 || x + r > g.W || y + r > g.H);
+    const railW = num(Fr.width);
+    if (r * 2 > railW) {
+      add("err", T("%name%がレール・枠の幅より大きいです", { name }),
+        T("%name%の直径 %d%mm に対して、レール・枠の幅が %w%mm しかありません。基板にかかるかパネルからはみ出します。", { name, d: r * 2, w: railW }),
+        T("レール・枠の幅を %w%mm にする", { w: Math.ceil(r * 2 + 2) }), () => { Fr.width = Math.ceil(r * 2 + 2) + "mm"; const o = railCenterOffsets(); if (o.v != null) S.voffset = o.v + "mm"; if (o.h != null) S.hoffset = o.h + "mm"; });
+    } else if (hits) {
+      add("err", T("%name%が基板にかかっているか、パネルからはみ出しています", { name }),
+        T("「端からの距離」がレール・枠の幅（%w%mm）に合っていません。位置はパネルの角から測った距離です。レールの真ん中に置くなら、その方向の距離をレール幅の半分（%h%mm）にします。", { w: railW, h: railW / 2 }),
+        "レールの真ん中に移動する", () => { const o = railCenterOffsets(); if (o.v != null) S.voffset = o.v + "mm"; if (o.h != null) S.hoffset = o.h + "mm"; if (Fr.type === "railstb" && num(S.hoffset) < r + 1) S.hoffset = (r + 3) + "mm"; if (Fr.type === "railslr" && num(S.voffset) < r + 1) S.voffset = (r + 3) + "mm"; });
+    }
+  }
+  const Fi = state.fiducials;
+  if (Fi.type !== "none" && num(Fi.opening) <= num(Fi.coppersize)) {
+    add("warn", "フィデューシャルのハンダマスク開口が銅より小さいです",
+      "実装機はマークのまわりのハンダマスクが抜けた部分とのコントラストで位置を読みます。開口は銅の直径の 2 倍くらいが目安です。",
+      "開口を銅の 2 倍にする", () => { Fi.opening = (num(Fi.coppersize) * 2) + "mm"; });
+  }
+
+  // 文字入れ（1〜4）
+  for (const tb of g.texts) {
+    const key = tb.key, Tx = state[key], P = T("文字入れ %n%：", { n: tb.n });
+    if (tb.unknown.length) {
+      add("err", P + T("KiKit が知らない変数があります：%v%", { v: tb.unknown.map(u => "{" + u + "}").join(" ") }),
+        "KiKit は知らない変数を見つけるとエラーで止まります。綴りを確認するか（大文字小文字も区別されます）、消してください。自分で決めた値なら、KiCad のプロジェクトのテキスト変数に入れて {user-名前} の形で使えます。",
+        "その変数を消す", () => { for (const u of tb.unknown) Tx.text = Tx.text.split("{" + u + "}").join(""); Tx.text = Tx.text.replace(/\s{2,}/g, " ").trim(); });
+    }
+    if (tb.bad) add("err", P + T("{ } の対応が取れていません"), "KiKit は { } を変数の印として使います。文字として { や } を入れたいときは {{ や }} と 2 つ重ねて書いてください。", null, null);
+    if (!Tx.text.trim()) {
+      add("warn", P + T("「入れる」なのに、文字が空です"), "何も入りません。使わないなら種類を「なし」にしてください。",
+        key === "text" ? "例の文字を入れる" : "「なし」にする", () => { if (key === "text") Tx.text = "{boardTitle} Rev.{boardRevision} {date}"; else Tx.type = "none"; });
+      continue;
+    }
+    if (!(tb.w > 0)) continue;
+    const onBoard = g.boards.some(b => overlap(tb, b));
+    const outside = tb.x < -1e-6 || tb.y < -1e-6 || tb.x + tb.w > g.W + 1e-6 || tb.y + tb.h > g.H + 1e-6;
+    const hitText = g.texts.find(o => o.key !== key && o.n < tb.n && o.w > 0 && overlap(tb, o));
+    const railWidth = framed ? num(Fr.width) : 0;
+    const hitMark = markCircles().find(c => circleHitsRect(c.x, c.y, c.r, tb));
+    if (onBoard || outside) {
+      add("warn", P + T(outside ? "パネルの外にはみ出しています" : "基板の上に重なっています"),
+        T(outside ? "はみ出した部分は基板の外形の外なので、製造で消えます。" : "パネル用の文字が、製品になる基板のシルクスクリーンと重なってしまいます。") +
+        T(framed ? "「アンカー」と「ずらし」で、文字をレールの上に置くのがおすすめです。上レールなら、アンカーを「上中央」にして、縦のずらしをレール幅の半分にします。" : "文字を載せる場所がないので、上下レールを足すのがおすすめです。"),
+        framed ? "空いているレールの上に置く" : "上下レールを足して、文字を載せる", () => { if (!framed) addRailsTb(); placeTextOnRail(key); });
+    } else if (hitText) {
+      add("warn", P + T("文字入れ %n% と重なっています", { n: hitText.n }),
+        "同じ場所に 2 つの文字が重なっています。アンカーを変える（上レールと下レール、左端と右端など）か、ずらしで離してください。",
+        "空いているレールの上に移動する", () => placeTextOnRail(key));
+    } else if (hitMark) {
+      add("warn", P + T("%name%と重なっています", { name: TM(hitMark.name) }),
+        T("文字が%name%（とそのまわりのハンダマスク開口）にかかっています。穴やマークの近くはシルクスクリーンが印刷されないので、文字が欠けます。", { name: TM(hitMark.name) }),
+        "空いているレールの上に移動する", () => placeTextOnRail(key));
+    } else if (framed && tb.th > railWidth * 0.8) {
+      add("warn", P + T("文字の高さがレールの幅に対して大きすぎます"), T("レール幅 %w%mm に対して文字の高さが %h%mm です。レールの端ぎりぎりはシルクスクリーンが欠けやすいので、レール幅の半分くらいまでにしておくと安心です。", { w: railWidth, h: tb.th }),
+        "文字をレール幅の半分の大きさにする", () => { const h = Math.max(0.8, Math.floor(railWidth * 0.5 * 10) / 10); Tx.height = h + "mm"; Tx.width = h + "mm"; });
+    }
+    const railTb = Fr.type !== "railslr" && framed;
+    const avail = (railTb || !framed) ? g.W - 2 : g.H - 2;
+    if (tb.len > avail && avail > 0) {
+      add("warn", P + T("文字が長すぎて、パネルに入りきりません"), T("文字の長さは約 %l%mm で、置ける幅は約 %a%mm です。文字を短くするか、文字幅を小さくしてください。", { l: tb.len.toFixed(1), a: avail.toFixed(1) }),
+        "文字幅を小さくして収める", () => { const k = avail / tb.len; Tx.width = Math.max(0.5, Math.floor(num(Tx.width) * k * 0.95 * 100) / 100) + "mm"; });
+    }
+  }
+
+  // 上限サイズ
+  const mw = num(Fr.maxtotalwidth), mh = num(Fr.maxtotalheight);
+  const chkW = framed && Fr.type !== "railstb", chkH = framed && Fr.type !== "railslr";
+  if ((chkW && g.W > mw + 1e-6) || (chkH && g.H > mh + 1e-6)) {
+    add("err", "パネルが上限サイズ（maxtotal〜）を超えています",
+      T("パネルは %w% × %h%mm、上限は %mw% × %mh%mm です。このままだと KiKit がエラーで止まります。枚数を減らすか、上限を見直してください。", { w: g.W.toFixed(1), h: g.H.toFixed(1), mw, mh }),
+      "上限に収まる枚数にする", () => {
+        document.getElementById("maxW").value = mw; document.getElementById("maxH").value = mh; renderFit();
+        const best = fitOpts[1] && fitOpts[1].n > fitOpts[0].n ? 1 : 0;
+        if (fitOpts[best] && fitOpts[best].n) { L.rows = fitOpts[best].rows; L.cols = fitOpts[best].cols; L.rotation = fitOpts[best].rot; }
+      });
+  }
+
+  // 仕上げ
+  if ((C.type === "mousebites" || Fr.type === "tightframe") && num(state.post.millradius) <= 0) {
+    add("info", "内角の R（millradius）が 0 です",
+      "基板の外形はルーター（ドリルのような刃）で削るので、内側の角は刃の半径ぶん丸くなります。0 のままだとデータと実物が少し変わります。1mm くらいにしておくのが一般的です。",
+      "内角の R を 1mm にする", () => { state.post.millradius = "1mm"; });
+  }
+  return W;
+}
+
+function renderWarnings() {
+  const box = document.getElementById("warns"); if (!box || !geo) return;
+  const ws = collectWarnings();
+  const order = { err: 0, warn: 1, info: 2 };
+  ws.sort((a, b) => order[a.lv] - order[b.lv]);
+  const lvName = { err: T("エラー"), warn: T("注意"), info: T("ヒント") };
+  if (!ws.length) { box.innerHTML = `<div class="wcard ok"><b><span class="lv">OK</span>${esc(T("気になるところはありません"))}</b></div>`; return; }
+  box.innerHTML = ws.map((w, i) => `<div class="wcard ${w.lv}"><b><span class="lv">${lvName[w.lv]}</span>${esc(w.title)}</b><p>${esc(w.why)}</p>${w.fix ? `<button class="btn" type="button" data-wfix="${i}">${esc(w.fixLabel)}</button>` : ""}</div>`).join("");
+  box.querySelectorAll("[data-wfix]").forEach(b => b.addEventListener("click", () => {
+    const w = ws[+b.dataset.wfix];
+    w.fix(); update(true); toast(T("「%x%」を反映しました", { x: w.fixLabel }));
+  }));
+}
+
+// ---- update / persistence ----
+function update(all = true) {
+  syncForm(all);
+  renderOutput();
+  renderPreview();
+  renderFit();
+  renderTextSim();
+  try { localStorage.setItem("kikit-preset-maker", JSON.stringify(state)); } catch (e) {}
+}
+
+function toast(msg, err) { const t = document.getElementById("toast"); t.textContent = T(msg); t.classList.toggle("err", !!err); clearTimeout(toast._t); toast._t = setTimeout(() => t.textContent = "", 4000); }
+
+function stripComments(s) {
+  let out = "", i = 0, inStr = false;
+  while (i < s.length) {
+    const ch = s[i], nx = s[i + 1];
+    if (inStr) { out += ch; if (ch === "\\") { out += nx ?? ""; i += 2; continue; } if (ch === '"') inStr = false; i++; continue; }
+    if (ch === '"') { inStr = true; out += ch; i++; continue; }
+    if (ch === "/" && nx === "/") { while (i < s.length && s[i] !== "\n") i++; continue; }
+    if (ch === "/" && nx === "*") { i += 2; while (i < s.length && !(s[i] === "*" && s[i + 1] === "/")) i++; i += 2; continue; }
+    out += ch; i++;
+  }
+  return out.replace(/,(\s*[}\]])/g, "$1");
+}
+function importText(txt) {
+  try {
+    const obj = JSON.parse(stripComments(txt));
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error(T("一番外側が { } のオブジェクトではありません"));
+    const known = Object.keys(obj).filter(k => DEFAULTS[k] || /^text[234]$/.test(k) || k === "debug");
+    state = mergeInto(clone(DEFAULTS), obj);
+    update(true);
+    toast(T("読み込みました（%n% セクション）。書かれていない項目は初期値です。", { n: known.length }));
+  } catch (e) {
+    toast(T("読み込めませんでした: ") + e.message, true);
+  }
+}
+
+// ---- wire up ----
+function renderPresets() {
+  const pre = document.getElementById("presets");
+  pre.innerHTML = "";
+  for (const P of PRESETS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<b>${esc(T(P.name))}</b><span>${esc(T(P.desc))}</span>`;
+    b.addEventListener("click", () => { state = mergeInto(clone(DEFAULTS), clone(P.data)); update(true); toast(T("「%x%」を読み込みました", { x: T(P.name) })); });
+    pre.appendChild(b);
+  }
+}
+// 画面に固定で書いてある文字（data-i18n）を今の言語にする。キーは日本語の原文
+function applyStatic() {
+  document.documentElement.lang = LANG === "zh" ? "zh-CN" : LANG;
+  document.title = T("KiKit 面付けプリセット メーカー");
+  document.documentElement.style.setProperty("--chg", JSON.stringify(T("変更")));
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    if (el.dataset.i18nKey == null) el.dataset.i18nKey = el.innerHTML.trim();
+    el.innerHTML = T(el.dataset.i18nKey);
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => {
+    if (el.dataset.i18nAriaKey == null) el.dataset.i18nAriaKey = el.getAttribute("aria-label");
+    el.setAttribute("aria-label", T(el.dataset.i18nAriaKey));
+  });
+  document.querySelectorAll("#langSwitch button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
+}
+function setLang(l) {
+  LANG = l;
+  try { localStorage.setItem("kikit-preset-maker-lang", l); } catch (e) {}
+  const open = [...document.querySelectorAll(".sec")].filter(d => d.open).map(d => d.dataset.sec);
+  applyStatic();
+  renderPresets();
+  renderForm();
+  document.querySelectorAll(".sec").forEach(d => { d.open = open.includes(d.dataset.sec); });
+  update(true);
+}
+document.querySelectorAll("#langSwitch button").forEach(b => b.addEventListener("click", () => setLang(b.dataset.lang)));
+applyStatic();
+renderPresets();
+renderForm();
+["optDiff", "optComment"].forEach(id => document.getElementById(id).addEventListener("change", renderOutput));
+document.getElementById("fname").addEventListener("input", renderOutput);
+["pw", "ph"].forEach(id => document.getElementById(id).addEventListener("input", () => { renderPreview(); renderFit(); }));
+["maxW", "maxH"].forEach(id => document.getElementById(id).addEventListener("input", renderFit));
+document.getElementById("fitGuard").addEventListener("change", renderFit);
+document.getElementById("copyJson").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(lastText); toast("JSON をコピーしました"); }
+  catch (e) { const r = document.createRange(); r.selectNodeContents(document.getElementById("out")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("コピーできなかったので選択しました。⌘C でコピーしてください", true); }
+});
+let dlCap = null;
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("downloads").then(d => { dlCap = d; }).catch(() => {});
+}
+document.getElementById("dlJson").addEventListener("click", async () => {
+  const filename = document.getElementById("fname").value || "panel-preset.json";
+  if (dlCap) {
+    try { await dlCap.save({ filename, data: lastText }); toast("保存しました"); }
+    catch (e) { toast("保存しませんでした。「JSON をコピー」も使えます", true); }
+    return;
+  }
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lastText], { type: "application/json" }));
+    a.download = document.getElementById("fname").value || "panel-preset.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    toast("ダウンロードしました。保存されない場合は「JSON をコピー」を使ってください");
+  } catch (e) { toast("この画面ではダウンロードできません。「JSON をコピー」を使ってください", true); }
+});
+document.getElementById("importBtn").addEventListener("click", () => importText(document.getElementById("importText").value));
+document.getElementById("importFile").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => { document.getElementById("importText").value = t; importText(t); });
+  e.target.value = "";
+});
+document.getElementById("resetBtn").addEventListener("click", () => { state = clone(DEFAULTS); update(true); toast("初期値に戻しました"); });
+
+// initial state: last session, otherwise the first example
+let restored = false;
+try { const s = localStorage.getItem("kikit-preset-maker"); if (s) { state = mergeInto(clone(DEFAULTS), JSON.parse(s)); restored = true; } } catch (e) {}
+if (!restored) state = mergeInto(clone(DEFAULTS), clone(PRESETS[0].data));
+update(true);
+</script>
+</body>
+</html>
