@@ -2,7 +2,7 @@
 
 [KiKit](https://github.com/yaqwsx/KiKit) の `kikit panelize -p 〜.json` 用プリセットを、画面で作るツールです。
 
-**→ https://Shinichi-Ohki.github.io/kikit-preset-maker/**
+**→ https://shinichi-ohki.github.io/kikit-preset-maker/**
 
 ## 日本語
 
